@@ -369,9 +369,9 @@ const CONFIG = {
     {
       name: "St. Bernard's",
       historyId: "stbernards",
-      applicationKey: "FDE0439C99A039989480E47DB05D1E8C",
-      apiKey: "909da748-7107-49b0-8345-2860fa22ac48",
-      mac: "48:F6:EE:A6:9F:68",
+      applicationKey: "PASTE_APPLICATION_KEY_2",
+      apiKey: "PASTE_API_KEY_2",
+      mac: "AA:BB:CC:DD:EE:00",
       wuStationId: "PASTE_WU_STATION_ID_2",
       wuApiKey: "PASTE_WU_API_KEY_2"
     }
@@ -1478,7 +1478,7 @@ function loadHistoryFile() {
   if (!historyFiles[id]) {
     historyFiles[id] = fetch(`${CONFIG.historyFolder || "data/"}history-${id}.json`, { cache: "no-cache" })
       .then(r => r.ok ? r.json() : null)
-      .then(j => j && Array.isArray(j.days) ? new Map(j.days.map(d => [d.d, d])) : null)
+      .then(j => { if (!(j && Array.isArray(j.days))) return null; const m = new Map(j.days.map(d => [d.d, d])); m.last = j.days.reduce((a, d) => d.d > a ? d.d : a, ""); return m; })
       .catch(() => null);
     historyFiles[id].then(m => { if (!m) delete historyFiles[id]; });   // missing file: try again next time
   }
@@ -1525,6 +1525,7 @@ async function monthDays(monthVal, onProgress, isStale) {
       let ok = false;
       const rec = hist && ds < todayStr ? hist.get(ds) : null;       // 1. the saved history file
       if (rec) { if (!rec.none) days.push(recordToDay(rec)); ok = true; }
+      else if (hist && ds < todayStr && ds <= hist.last) ok = true;   // inside the file's range but not in it: no data (the nightly run retries it), so don't ask the API
       const saved = !ok && ds < todayStr ? loadSavedDay(ds) : null;  // 2. what this browser has seen before       // finished days are remembered between visits
       if (saved) { days.push(saved); ok = true; }
       for (let attempt = 1; attempt <= 3 && !ok; attempt++) {     // retry, in case the service said "too many requests"
