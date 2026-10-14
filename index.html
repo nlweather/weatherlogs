@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Station</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #eef2ef;
+    --card: #fbfcfa;
+    --ink: #1b2a31;
+    --muted: #5d7079;
+    --line: #cfd9d6;
+    --sea: #2b6777;
+    --buoy: #e0561b;
+    --warn-bg: #fdecdf;
+    --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #11191d; --card: #172227; --ink: #e6eeea; --muted: #8da1a9;
+      --line: #2a3b42; --sea: #6fb3c4; --buoy: #ff7a3d; --warn-bg: #3a2418;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #11191d; --card: #172227; --ink: #e6eeea; --muted: #8da1a9;
+    --line: #2a3b42; --sea: #6fb3c4; --buoy: #ff7a3d; --warn-bg: #3a2418;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0; color: var(--ink); background: var(--paper);
+    font: 400 16px/1.5 var(--body);
+    padding: 24px clamp(16px, 4vw, 48px) 48px;
+    max-width: 1100px; margin-inline: auto;
+  }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 24px; }
+  h1 { font: 800 clamp(1.6rem, 4vw, 2.2rem)/1.1 var(--display); margin: 0; letter-spacing: -0.02em; }
+  .status { color: var(--muted); font-size: 0.9rem; }
+  .status b { color: var(--ink); font-weight: 500; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font: 500 0.9rem var(--body); color: var(--ink); background: var(--card);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--sea); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--card); }
+  .seg button { border: 0; border-radius: 0; background: transparent; }
+  .seg button[aria-pressed="true"] { background: var(--sea); color: var(--card); }
+  .seg button:focus-visible { outline-offset: -3px; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--buoy); outline-offset: 2px; }
+
+  .hero { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  .panel-title { font: 600 0.95rem var(--body); color: var(--muted); margin: 0 0 6px; }
+  .temp-big { font: 800 clamp(3.5rem, 9vw, 5.5rem)/0.95 var(--display); letter-spacing: -0.04em; }
+  .temp-big small { font-size: 0.35em; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+  .now-body { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; }
+  .now-side { border-left: 1px solid var(--line); padding-left: 24px; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
+  .stack { margin: 16px 0 0; }
+  .stack > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+  .stack dt { color: var(--muted); }
+  .stack dd { margin: 0; font: 600 1.1rem var(--display); font-variant-numeric: tabular-nums; }
+  .stat-label { color: var(--muted); font-size: 0.9rem; }
+  .stat-val { font: 800 1.9rem/1.15 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .stat-note { color: var(--muted); font-size: 0.85rem; }
+  .sub { color: var(--muted); margin-top: 10px; }
+  .sub span + span { margin-left: 18px; }
+  .compass-wrap { display: flex; align-items: center; gap: 16px; }
+  .compass { width: min(220px, 48vw); flex: none; }
+  .compass .ring { fill: none; stroke: var(--line); stroke-width: 2; }
+  .compass .tick { stroke: var(--muted); stroke-width: 1.5; }
+  .compass text { fill: var(--muted); font: 600 13px var(--display); text-anchor: middle; dominant-baseline: central; }
+  .compass .needle { transform-origin: 100px 100px; transition: transform 1.2s cubic-bezier(.3,1.4,.5,1); }
+  .compass .tip { fill: var(--buoy); }
+  .compass .tail { fill: var(--sea); }
+  .wind-num { font: 800 2.4rem/1 var(--display); letter-spacing: -0.02em; }
+  .wind-num small { font-size: 0.45em; color: var(--muted); font-weight: 600; margin-left: 3px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .metric h2 { font: 600 0.95rem var(--body); color: var(--muted); margin: 0 0 6px; }
+  .metric .v { font: 800 2rem/1.1 var(--display); letter-spacing: -0.02em; }
+  .metric .v small { font-size: 0.5em; color: var(--muted); font-weight: 600; margin-left: 3px; }
+  .metric dl { margin: 12px 0 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; font-size: 0.88rem; }
+  .metric dt { color: var(--muted); }
+  .metric dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+  .chart-card { margin-top: 16px; }
+  .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
+  .chart-legend { display: flex; gap: 16px; font-size: 0.85rem; color: var(--muted); }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chart-legend svg { width: 22px; height: 8px; }
+  .chart-wrap { position: relative; }
+  .chart-wrap svg { display: block; touch-action: pan-y; }
+  .chart-empty { color: var(--muted); margin: 0; padding: 28px 0; }
+  .chart-tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--paper); border-radius: 6px; padding: 6px 10px; font-size: 0.82rem; line-height: 1.3; transform: translate(-50%, -120%); white-space: nowrap; }
+  .chart-tip b { display: block; font: 600 1rem var(--display); }
+  .axis-text { fill: var(--muted); font: 400 11px var(--body); }
+  .grid-line { stroke: var(--line); stroke-width: 1; }
+  .freeze-line { stroke: var(--buoy); stroke-width: 1; stroke-dasharray: 4 4; }
+  .temp-area { fill: var(--sea); opacity: 0.12; }
+  .temp-line { fill: none; stroke: var(--sea); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  .humidex-line { fill: none; stroke: var(--buoy); stroke-width: 2.25; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round; }
+  .hover-dot2 { fill: var(--buoy); stroke: var(--card); stroke-width: 2; }
+  .temp-now { fill: var(--sea); stroke: var(--card); stroke-width: 2; }
+  .now-dot { fill: var(--buoy); stroke: var(--card); stroke-width: 2; }
+  .hover-line { stroke: var(--muted); stroke-width: 1; }
+  .hover-dot { fill: var(--sea); stroke: var(--card); stroke-width: 2; }
+  .notice { background: var(--warn-bg); border: 1px solid var(--buoy); border-radius: 10px; padding: 14px 18px; margin-bottom: 16px; }
+    .notice strong { display: block; margin-bottom: 4px; }
+
+  .stats-table { width: 100%; max-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .stats-table th, .stats-table td { padding: 10px 12px; border-top: 1px solid var(--line); text-align: left; }
+  .stats-table thead th { color: var(--muted); font-weight: 500; font-size: 0.85rem; border-top: 0; }
+  .stats-table thead th:nth-child(2) { text-align: right; }
+  .stats-table tbody th { font-weight: 400; color: var(--muted); }
+  .stats-table td.v { font: 800 1.15rem var(--display); letter-spacing: -0.01em; text-align: right; white-space: nowrap; }
+  .stats-table td.t { white-space: nowrap; }
+  .mon-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
+  .mon-cards:empty { display: none; }
+  .mon-cards .stats-table td.t { white-space: normal; }
+  .table-scroll { overflow-x: auto; }
+  .year-table { max-width: none; }
+  .year-table th, .year-table td { padding: 9px 10px; }
+  .year-table thead th { text-align: right; vertical-align: bottom; }
+  .year-table thead th:first-child, .year-table tbody th, .year-table tfoot th { text-align: left; }
+  .year-table tbody td, .year-table tfoot td { text-align: right; white-space: nowrap; }
+  .year-table td.na { text-align: left; color: var(--muted); }
+  .year-table tfoot td, .year-table tfoot th { font-weight: 700; border-top: 2px solid var(--line); }
+  .stats-note { color: var(--muted); font-size: 0.85rem; max-width: 70ch; margin: 12px 0 0; }
+  .hist-nav { margin-bottom: 16px; flex-wrap: wrap; }
+  .raw-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
+  .date-field { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; font-size: 0.9rem; }
+  .date-field input { font: 400 0.95rem var(--body); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; color-scheme: light dark; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:disabled:hover { border-color: var(--line); }
+  .raw-status { color: var(--muted); font-size: 0.9rem; margin: 8px 0 12px; min-height: 1.4em; }
+  .table-wrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: 8px; }
+  .table-wrap:empty { display: none; }
+  table.raw { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  .raw th, .raw td { padding: 6px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; background: var(--card); }
+  .raw thead th { position: sticky; top: 0; z-index: 2; vertical-align: bottom; font-weight: 500; }
+  .raw th:first-child, .raw td:first-child { position: sticky; left: 0; z-index: 1; text-align: left; border-right: 1px solid var(--line); }
+  .raw thead th:first-child { z-index: 3; }
+  .raw tbody tr:hover td { background: var(--paper); }
+  .raw td.na { color: var(--muted); }
+  .th-cat { display: block; color: var(--muted); font-size: 0.75rem; font-weight: 400; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px 24px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+  .tabs button {
+    background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
+    padding: 10px 2px; margin-bottom: -1px; font: 600 1rem var(--display); color: var(--muted);
+  }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--buoy); }
+  .tabs button:focus-visible { outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  .placeholder { text-align: left; max-width: 60ch; }
+  .placeholder h2 { font: 800 1.4rem var(--display); margin: 0 0 6px; letter-spacing: -0.02em; }
+  .placeholder p { color: var(--muted); margin: 0; }
+
+  @media (max-width: 720px) { .hero { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) {
+    .now-body { grid-template-columns: 1fr; }
+    .now-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .compass .needle { transition: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1 id="title">Weather Station</h1>
+    <div class="status" id="status">Not connected yet.</div>
+  </div>
+  <div class="actions">
+    <div class="seg" role="group" aria-label="Station" id="stationSeg"></div>
+    <div class="seg" role="group" aria-label="Units">
+      <button type="button" id="uMetric" aria-pressed="true">Metric</button>
+      <button type="button" id="uImperial" aria-pressed="false">Imperial</button>
+    </div>
+    <button id="themeBtn" type="button">Dark mode</button>
+  </div>
+</header>
+
+<div class="notice" id="notice" hidden role="alert"><strong id="noticeTitle"></strong><span id="noticeBody"></span></div>
+
+<nav class="tabs" role="tablist" aria-label="Data views">
+  <button type="button" role="tab" id="tabCurrent" data-view="current" aria-selected="true">Current weather</button>
+  <button type="button" role="tab" id="tabHistoric" data-view="historic" aria-selected="false">Historic data</button>
+  <button type="button" role="tab" id="tabClimate" data-view="climate" aria-selected="false">Climatological averages</button>
+</nav>
+
+<div id="viewCurrent" role="tabpanel" aria-labelledby="tabCurrent">
+<section class="hero" aria-label="Current conditions">
+  <div class="panel">
+    <h2 class="panel-title">Current conditions</h2>
+    <div class="now-body">
+      <div class="now-main">
+        <div class="temp-big"><span id="temp">--</span><small id="tempUnit"></small></div>
+        <dl class="stack">
+          <div><dt>Relative humidity</dt><dd id="humNow">--</dd></div>
+          <div><dt>Dew point</dt><dd id="dew">--</dd></div>
+          <div><dt>Humidex</dt><dd id="humidex">--</dd></div>
+          <div><dt>Wind chill</dt><dd id="windchill">--</dd></div>
+        </dl>
+      </div>
+      <div class="now-side" aria-label="Daily stats">
+        <div class="stat"><div class="stat-label">Daily high</div><div class="stat-val" id="dailyHigh">--</div></div>
+        <div class="stat"><div class="stat-label">Daily low</div><div class="stat-val" id="dailyLow">--</div></div>
+        <div class="stat"><div class="stat-label">Precipitation</div><div class="stat-val" id="precipDay">--</div></div>
+        <div class="stat-note" id="dailyNote" hidden>Daily high and low are unavailable right now.</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel compass-wrap">
+    <svg class="compass" viewBox="0 0 200 200" role="img" aria-label="Wind direction compass" id="compass">
+      <circle class="ring" cx="100" cy="100" r="84"/>
+      <g id="ticks"></g>
+      <text x="100" y="12">N</text><text x="188" y="100">E</text><text x="100" y="188">S</text><text x="12" y="100">W</text>
+      <g class="needle" id="needle">
+        <polygon class="tip" points="100,30 108,100 92,100"/>
+        <polygon class="tail" points="100,170 107,100 93,100"/>
+        <circle cx="100" cy="100" r="5" fill="var(--card)" stroke="var(--ink)" stroke-width="2"/>
+      </g>
+    </svg>
+    <div>
+      <div class="wind-num"><span id="wind">--</span><small id="windUnit"></small></div>
+      <div class="sub">Wind from <b id="windDir">--</b></div>
+      <div class="sub">Gusts <b id="gust">--</b></div>
+    </div>
+  </div>
+</section>
+
+<section class="grid" aria-label="More readings">
+  <article class="panel metric"><h2>Indoor Conditions</h2><div class="v"><span id="inTemp">--</span></div>
+    <dl><dt>Relative humidity</dt><dd id="inHum">--</dd><dt>Humidex</dt><dd id="inHumidex">--</dd></dl></article>
+  <article class="panel metric"><h2>Pressure</h2><div class="v"><span id="press">--</span><small id="pressUnit"></small></div>
+    <dl><dt>Absolute</dt><dd id="pressAbs">--</dd></dl></article>
+  <article class="panel metric"><h2>Rain Today</h2><div class="v"><span id="rainDay">--</span><small id="rainUnit"></small></div>
+    <dl><dt>Rate</dt><dd id="rainRate">--</dd><dt>Week</dt><dd id="rainWeek">--</dd><dt>Month</dt><dd id="rainMonth">--</dd></dl></article>
+  <article class="panel metric"><h2>Sun</h2><div class="v"><span id="uvi">--</span><small>UV index</small></div>
+    <dl><dt>Solar radiation</dt><dd id="solar">--</dd></dl></article>
+</section>
+
+<section class="panel chart-card" aria-label="Temperature Today">
+  <div class="chart-head">
+    <h2 class="panel-title">Temperature today</h2>
+    <div class="chart-legend" id="chartLegend" hidden></div>
+  </div>
+  <div class="chart-wrap" id="tempChart"></div>
+</section>
+</div>
+
+<section id="viewHistoric" role="tabpanel" aria-labelledby="tabHistoric" hidden>
+  <div class="seg hist-nav" role="group" aria-label="Historic data views">
+    <button type="button" data-hist="year" aria-pressed="false">By year</button>
+    <button type="button" data-hist="month" aria-pressed="false">By month</button>
+    <button type="button" data-hist="day" aria-pressed="false">By day</button>
+    <button type="button" data-hist="raw" aria-pressed="true">Raw daily data</button>
+  </div>
+
+  <div id="histYear" hidden>
+    <div class="panel">
+      <h2 class="panel-title">Yearly stats</h2>
+      <div class="raw-controls">
+        <button type="button" id="yrPrev">Previous year</button>
+        <label class="date-field">Year <input type="number" id="yrDate" step="1" style="width: 6.5em"></label>
+        <button type="button" id="yrNext">Next year</button>
+        <button type="button" id="yrToday">This year</button>
+      </div>
+      <p class="raw-status" id="yrStatus" aria-live="polite"></p>
+    </div>
+    <div class="panel" style="margin-top: 16px" id="yrPanel"><div id="yrTable"></div></div>
+  </div>
+  <div id="histMonth" hidden>
+    <div class="panel">
+      <h2 class="panel-title">Monthly stats</h2>
+      <div class="raw-controls">
+        <button type="button" id="monPrev">Previous month</button>
+        <label class="date-field">Month <input type="month" id="monDate"></label>
+        <button type="button" id="monNext">Next month</button>
+        <button type="button" id="monToday">This month</button>
+      </div>
+      <p class="raw-status" id="monStatus" aria-live="polite"></p>
+    </div>
+    <div id="monCards" class="mon-cards"></div>
+  </div>
+  <div id="histDay" class="panel" hidden>
+    <h2 class="panel-title">Daily stats</h2>
+    <div class="raw-controls">
+      <button type="button" id="dayPrev">Previous day</button>
+      <label class="date-field">Day <input type="date" id="dayDate"></label>
+      <button type="button" id="dayNext">Next day</button>
+      <button type="button" id="dayToday">Today</button>
+    </div>
+    <p class="raw-status" id="dayStatus" aria-live="polite"></p>
+    <div id="dayStats"></div>
+  </div>
+
+  <div id="histRaw" class="panel">
+    <h2 class="panel-title">Raw daily data</h2>
+    <div class="raw-controls">
+      <button type="button" id="rawPrev">Previous day</button>
+      <label class="date-field">Day <input type="date" id="rawDate"></label>
+      <button type="button" id="rawNext">Next day</button>
+      <button type="button" id="rawToday">Today</button>
+    </div>
+    <p class="raw-status" id="rawStatus" aria-live="polite"></p>
+    <div class="table-wrap" id="rawTable"></div>
+  </div>
+</section>
+
+<section id="viewClimate" role="tabpanel" aria-labelledby="tabClimate" hidden>
+  <div class="panel placeholder">
+    <h2>Climatological averages</h2>
+    <p>Long-term averages for <span class="stationName"></span> will go here.</p>
+  </div>
+</section>
+
+
+<script>
+/* ---------- Configuration ----------
+   Edit this block. Anything in this file is public if you host the page. */
+const CONFIG = {
+  stations: [
+    {
+      name: "Summerville",
+      historyId: "summerville",   // matches the id in scripts/stations.json (the page reads data/history-<id>.json)
+      applicationKey: "8CEBC4BD8D19265B2253A6A45AC8881B",
+      apiKey: "bdc34b99-902e-473c-850a-ec637bf3531f",
+      mac: "BC:FF:4D:10:EC:AD",
+      wuStationId: "ISTJOH60",   
+      wuApiKey: "ff64876a89d04f23a4876a89d01f2374"
+    },
+    {
+      name: "St. Bernard's",
+      historyId: "stbernards",
+      applicationKey: "PASTE_APPLICATION_KEY_2",
+      apiKey: "PASTE_API_KEY_2",
+      mac: "AA:BB:CC:DD:EE:00",
+      wuStationId: "PASTE_WU_STATION_ID_2",
+      wuApiKey: "PASTE_WU_API_KEY_2"
+    }
+  ],
+  proxyUrl: "",            // optional: your own server/worker that adds the keys and forwards the call
+  wuProxyUrl: "",          // optional: your own proxy for Weather Underground calls (adds the key for you)
+  historyStart: "2022-05-01",   // earliest day the raw data picker allows when Weather Underground is set up (a station can have its own historyStart)
+  historyFolder: "data/",       // where the nightly script saves each station's finished days (see README.md)
+  ecowittFullDetailDays: 90,    // days newer than this use Ecowitt (every sensor); older days use Weather Underground
+  refreshMinutes: 0.5,
+  defaultUnits: "metric"   // "metric" or "imperial" (the toggle in the header overrides this)
+};
+
+// Ecowitt unit ids for each system
+const UNIT_SETS = {
+  metric:   { temp: 1, pressure: 3, wind: 7, rain: 12, solar: 16 },  // °C, hPa, km/h, mm
+  imperial: { temp: 2, pressure: 4, wind: 9, rain: 13, solar: 16 }   // °F, inHg, mph, in
+};
+
+const API = "https://api.ecowitt.net/api/v3/device/real_time";
+const API_HISTORY = "https://api.ecowitt.net/api/v3/device/history";
+const WU_HISTORY_ALL = "https://api.weather.com/v2/pws/history/all";
+const $ = id => document.getElementById(id);
+let timer = null;
+
+/* ---------- preferences: units + theme ---------- */
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem("ecowitt-prefs") || "{}"); } catch { return {}; }
+}
+const prefs = Object.assign({ units: CONFIG.defaultUnits, theme: null, station: 0 }, loadPrefs());
+if (!CONFIG.stations[prefs.station]) prefs.station = 0;
+function savePrefs() { try { localStorage.setItem("ecowitt-prefs", JSON.stringify(prefs)); } catch {} }
+const systemDark = () => window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+const isDark = () => (prefs.theme ? prefs.theme === "dark" : systemDark());
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", isDark() ? "dark" : "light");
+  $("themeBtn").textContent = isDark() ? "Light mode" : "Dark mode";
+}
+function applyUnitButtons() {
+  $("uMetric").setAttribute("aria-pressed", prefs.units === "metric");
+  $("uImperial").setAttribute("aria-pressed", prefs.units === "imperial");
+}
+$("themeBtn").onclick = () => { prefs.theme = isDark() ? "light" : "dark"; savePrefs(); applyTheme(); };
+function setUnits(u) {
+  if (prefs.units === u) return;
+  prefs.units = u; savePrefs(); applyUnitButtons(); load(); refreshHistoric();
+}
+$("uMetric").onclick = () => setUnits("metric");
+$("uImperial").onclick = () => setUnits("imperial");
+applyTheme(); applyUnitButtons();
+
+/* ---------- active station + view ---------- */
+let view = "current";
+let reqId = 0;
+const station = () => CONFIG.stations[prefs.station];
+function getCfg() {
+  const st = station();
+  return {
+    applicationKey: st.applicationKey,
+    apiKey: st.apiKey,
+    mac: st.mac,
+    stationName: st.name,
+    proxyUrl: CONFIG.proxyUrl,
+    wuStationId: st.wuStationId,
+    wuApiKey: st.wuApiKey,
+    historyStart: st.historyStart || CONFIG.historyStart
+  };
+}
+
+/* ---------- helpers ---------- */
+const num = o => (o && o.value !== undefined && o.value !== "") ? Number(o.value) : null;
+const unit = o => (o && o.unit) ? o.unit : "";
+const fmt = (o, digits = 1) => { const n = num(o); return n === null || isNaN(n) ? "--" : n.toFixed(digits); };
+const fmtU = (o, digits = 1) => { const n = num(o); return n === null || isNaN(n) ? "--" : `${n.toFixed(digits)} ${unit(o)}`.trim(); };
+const compass = deg => ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(deg / 22.5) % 16];
+
+function showNotice(title, body) { $("noticeTitle").textContent = title; $("noticeBody").textContent = body; $("notice").hidden = false; }
+function hideNotice() { $("notice").hidden = true; }
+
+/* ---------- humidex ----------
+   Environment and Climate Change Canada's standard formula:
+     Humidex = T + 0.5555 * (e - 10)
+     e = 6.11 * exp(5417.7530 * (1/273.15 - 1/Tdew_K))   (vapour pressure, hPa)
+   T and dew point are in degrees Celsius (dew point converted to kelvins inside e).
+   ECCC only reports it when T >= 20 C and the humidex is at least 1 degree above T
+   (outdoor humidex follows that rule; indoor humidex is shown all year).
+   The calculation is done in Celsius and the result is converted to Fahrenheit
+   when the station data is in Imperial. */
+const isF = o => /F|℉/i.test(unit(o));
+const toC = o => {
+  const n = num(o);
+  if (n === null || isNaN(n)) return null;
+  return isF(o) ? (n - 32) * 5 / 9 : n;
+};
+// Convert a Celsius-scale result to whatever unit the station data came back in
+const fromC = (c, o) => isF(o) ? c * 9 / 5 + 32 : c;
+function humidexValue(tC, tdC) {
+  const e = 6.11 * Math.exp(5417.7530 * (1 / 273.15 - 1 / (tdC + 273.15)));
+  return tC + 0.5555 * (e - 10.0);
+}
+// Returns a number (in the data's own temperature unit), null when ECCC's display rule
+// (T >= 20 C and humidex at least 1 above T) says not to show it, or undefined when
+// the inputs are missing. The rule is skipped when always is true.
+function humidexNumber(tempObj, dewObj, always = false) {
+  const t = toC(tempObj), td = toC(dewObj);
+  if (t === null || td === null) return undefined;
+  const h = humidexValue(t, td);
+  if (!always && !(t >= 18 && h - t >= 1)) return null;
+  return fromC(h, tempObj);
+}
+function humidexText(tempObj, dewObj, always = false) {
+  const h = humidexNumber(tempObj, dewObj, always);
+  return h === undefined ? "--" : h === null ? "N/A" : String(Math.round(h));
+}
+
+/* Indoor dew point. The API doesn't always include one for the indoor sensor,
+   so work it out from temperature and relative humidity (Magnus formula).
+   Returned in the same unit as the temperature so humidexText can use it. */
+function dewPointFrom(tempObj, rhObj) {
+  const t = toC(tempObj), rh = num(rhObj);
+  if (t === null || rh === null || isNaN(rh) || rh <= 0) return null;
+  const b = 17.625, c = 243.04;
+  const g = Math.log(rh / 100) + (b * t) / (c + t);
+  const tdC = (c * g) / (b - g);
+  return { value: String(fromC(tdC, tempObj)), unit: unit(tempObj) };
+}
+
+/* ---------- wind chill ----------
+   Environment and Climate Change Canada's standard formulas (T in C, V in km/h):
+     V >= 5 km/h:  W = 13.12 + 0.6215*T - 11.37*V^0.16 + 0.3965*T*V^0.16
+     0 < V < 5:    W = T + ((-1.59 + 0.1345*T) / 5) * V
+   Both apply only when T <= 0 C. Calculated in Celsius, then converted to
+   Fahrenheit when the station data is in Imperial. */
+const toKmh = o => {
+  const n = num(o);
+  if (n === null || isNaN(n)) return null;
+  const u = unit(o).toLowerCase();
+  if (u.includes("km")) return n;
+  if (u.includes("mph") || u.includes("mi")) return n * 1.609344;
+  if (u.includes("m/s")) return n * 3.6;
+  if (u.includes("knot") || u === "kt" || u === "kts") return n * 1.852;
+  return null;
+};
+function windChillValue(tC, vKmh) {
+  if (vKmh >= 5) {
+    const v16 = Math.pow(vKmh, 0.16);
+    return 13.12 + 0.6215 * tC - 11.37 * v16 + 0.3965 * tC * v16;
+  }
+  return tC + ((-1.59 + 0.1345 * tC) / 5) * vKmh;
+}
+function windChillText(tempObj, windObj) {
+  const t = toC(tempObj), v = toKmh(windObj);
+  if (t === null || v === null) return "--";
+  return (t <= 0 && v > 0) ? String(Math.round(fromC(windChillValue(t, v), tempObj))) : "N/A";
+}
+
+/* ---------- render ---------- */
+function render(d) {
+  const out = d.outdoor || {}, ind = d.indoor || {}, wind = d.wind || {}, rain = d.rainfall || {};
+  const pr = d.pressure || {}, sol = d.solar_and_uvi || {};
+  const dg = prefs.units === "imperial" ? 2 : 1;   // inHg and inches need two decimals
+
+  $("temp").textContent = fmt(out.temperature);
+  $("tempUnit").textContent = unit(out.temperature);
+  $("humidex").textContent = humidexText(out.temperature, out.dew_point);
+  $("windchill").textContent = windChillText(out.temperature, wind.wind_speed);
+  $("dew").textContent = fmtU(out.dew_point);
+
+  $("wind").textContent = fmt(wind.wind_speed);
+  $("windUnit").textContent = unit(wind.wind_speed);
+  $("gust").textContent = fmtU(wind.wind_gust);
+  const deg = num(wind.wind_direction);
+  if (deg !== null && !isNaN(deg)) {
+    $("needle").style.transform = `rotate(${deg}deg)`;
+    $("windDir").textContent = `${compass(deg)} (${Math.round(deg)}°)`;
+  }
+
+  $("humNow").textContent = fmtU(out.humidity, 0);
+  $("precipDay").textContent = fmtU(rain.daily, dg);
+  curTemp = num(out.temperature);
+  curHumidex = humidexNumber(out.temperature, out.dew_point);
+  $("inHum").textContent = fmtU(ind.humidity, 0);
+  $("inTemp").textContent = fmtU(ind.temperature);
+  $("inHumidex").textContent = humidexText(ind.temperature, ind.dew_point || dewPointFrom(ind.temperature, ind.humidity), true);
+
+  $("press").textContent = fmt(pr.relative, dg);
+  $("pressUnit").textContent = unit(pr.relative);
+  $("pressAbs").textContent = fmtU(pr.absolute, dg);
+
+  $("rainDay").textContent = fmt(rain.daily, dg);
+  $("rainUnit").textContent = unit(rain.daily);
+  $("rainRate").textContent = fmtU(rain.rain_rate, dg);
+  $("rainWeek").textContent = fmtU(rain.weekly, dg);
+  $("rainMonth").textContent = fmtU(rain.monthly, dg);
+
+  $("uvi").textContent = fmt(sol.uvi, 0);
+  $("solar").textContent = fmtU(sol.solar, 0);
+
+  const t = out.temperature && out.temperature.time ? new Date(Number(out.temperature.time) * 1000) : new Date();
+  $("status").innerHTML = `Station reported at <b>${t.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}</b> on ${t.toLocaleDateString([], {month: "short", day: "numeric"})}. Checks again every ${CONFIG.refreshMinutes} min.`;
+}
+
+/* ---------- fetch ---------- */
+const FIELDS = ["temp","humNow","humidex","windchill","dew","dailyHigh","dailyLow","precipDay","wind","gust","windDir","inHum","inTemp","inHumidex","press","pressAbs","rainDay","rainRate","rainWeek","rainMonth","uvi","solar"];
+const placeholder = v => /PASTE_|^AA:BB:CC/.test(v || "");
+
+function clearData() {
+  $("dailyNote").hidden = true; curTemp = null; curHumidex = null;
+  renderChart();
+  FIELDS.forEach(id => { $(id).textContent = "--"; });
+  ["tempUnit","windUnit","pressUnit","rainUnit"].forEach(id => { $(id).textContent = ""; });
+}
+
+async function load() {
+  const c = getCfg();
+  const my = ++reqId;
+  if (!c.proxyUrl && (placeholder(c.applicationKey) || placeholder(c.apiKey) || !c.apiKey || !c.applicationKey) || placeholder(c.mac) || !c.mac) {
+    showNotice("Add your station details.", "Open the file and fill in this station's application key, API key and MAC address in the CONFIG block near the top of the script.");
+    $("status").textContent = "Not connected yet.";
+    return;
+  }
+
+  const u = UNIT_SETS[prefs.units] || UNIT_SETS.metric;
+  const params = new URLSearchParams({
+    mac: c.mac, call_back: "all",
+    temp_unitid: u.temp, pressure_unitid: u.pressure,
+    wind_speed_unitid: u.wind, rainfall_unitid: u.rain, solar_radiation_unitid: u.solar
+  });
+  if (!c.proxyUrl) { params.set("application_key", c.applicationKey); params.set("api_key", c.apiKey); }
+  const base = c.proxyUrl || API;
+  const url = `${base}${base.includes("?") ? "&" : "?"}${params}`;
+
+  $("status").textContent = "Loading...";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (my !== reqId) return;               // user switched station while this was loading
+    if (json.code !== 0) throw new Error(`Ecowitt said: ${json.msg || "unknown error"} (code ${json.code})`);
+    hideNotice();
+    render(json.data);
+    loadDaily();
+  } catch (err) {
+    if (my !== reqId) return;
+    if (err instanceof TypeError) {
+      showNotice("Couldn't reach the Ecowitt API.",
+        "The browser blocked the request or you're offline. If your connection is fine, Ecowitt's server may not allow direct calls from web pages (a CORS block). Set proxyUrl in CONFIG to fix that.");
+    } else {
+      showNotice("The station data didn't load.", err.message + ". Check the keys and MAC address in CONFIG.");
+    }
+    $("status").textContent = "Last update failed.";
+  }
+}
+
+function schedule() {
+  setInterval(load, CONFIG.refreshMinutes * 60 * 1000);
+}
+
+/* ---------- daily high / low ----------
+   Ecowitt's real-time call has no daily high or low, so we ask the history
+   endpoint for today's 5-minute temperature readings (midnight to now, in this
+   browser's local time) and take the max and min. Results are cached for 5
+   minutes so the 15-second refresh doesn't hammer the history API. */
+let curTemp = null, curHumidex = null;
+const dailyCache = {};
+const pad = n => String(n).padStart(2, "0");
+const dateStr = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dailyKey = () => `${prefs.station}|${prefs.units}|${dateStr(new Date())}`;
+
+function renderDaily() {
+  const st = dailyCache[dailyKey()];
+  const note = $("dailyNote");
+  if (!st || st.failed) {
+    $("dailyHigh").textContent = "--"; $("dailyLow").textContent = "--";
+    note.hidden = !st;
+    renderChart();
+    return;
+  }
+  note.hidden = true;
+  // history can lag the live reading by a few minutes, so include the current temperature
+  const hi = curTemp === null ? st.hi : Math.max(st.hi, curTemp);
+  const lo = curTemp === null ? st.lo : Math.min(st.lo, curTemp);
+  $("dailyHigh").textContent = `${hi.toFixed(1)} ${st.unit}`.trim();
+  $("dailyLow").textContent = `${lo.toFixed(1)} ${st.unit}`.trim();
+  renderChart();
+}
+
+/* ---------- today's temperature chart (plain SVG, no library) ---------- */
+function niceTicks(min, max, target = 5) {
+  if (max - min < 2) { const mid = (max + min) / 2; min = mid - 1; max = mid + 1; }
+  const raw = (max - min) / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map(m => m * mag).find(st => st >= raw);
+  const out = [];
+  for (let v = Math.floor(min / step) * step; v < max + step; v += step) {
+    out.push(Number((Math.round(v / step) * step).toFixed(6)));
+    if (v >= max) break;
+  }
+  return out;
+}
+
+function renderChart() {
+  const host = $("tempChart");
+  const w = Math.floor(host.clientWidth);
+  if (!w) return;                                   // tab is hidden; redraws when shown
+  const st = dailyCache[dailyKey()];
+  const msg = text => { host.innerHTML = `<p class="chart-empty">${text}</p>`; };
+  if (!st) return msg("Loading today's temperatures...");
+  if (st.failed || !st.pts || !st.pts.length) return msg("Today's temperature history isn't available right now.");
+
+  const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+  const t0 = dayStart.getTime(), t1 = t0 + 86400000;
+  let pts = st.pts.filter(p => p[0] >= t0 && p[0] <= t1);
+  if (curTemp !== null && Date.now() > (pts.length ? pts[pts.length - 1][0] : 0)) pts.push([Date.now(), curTemp, curHumidex === undefined ? null : curHumidex]);
+  if (!pts.length) return msg("No readings yet today.");
+
+  const H = w < 520 ? 220 : 290, ml = 44, mr = 16, mt = 14, mb = 28;
+  const hasHx = pts.some(p => p[2] != null);          // plot humidex only on days it registers
+  const legend = $("chartLegend");
+  legend.hidden = !hasHx;
+  legend.innerHTML = hasHx
+    ? '<span><svg viewBox="0 0 22 8"><line x1="0" x2="22" y1="4" y2="4" stroke="var(--sea)" stroke-width="2.5"/></svg>Temperature</span>' +
+      '<span><svg viewBox="0 0 22 8"><line x1="0" x2="22" y1="4" y2="4" stroke="var(--buoy)" stroke-width="2.25" stroke-dasharray="6 4"/></svg>Humidex</span>'
+    : "";
+  const vals = [];
+  pts.forEach(p => { vals.push(p[1]); if (p[2] != null) vals.push(p[2]); });
+  const ticks = niceTicks(Math.min(...vals), Math.max(...vals));
+  const ymin = ticks[0], ymax = ticks[ticks.length - 1];
+  const X = t => ml + (t - t0) / 86400000 * (w - ml - mr);
+  const Y = v => mt + (1 - (v - ymin) / (ymax - ymin)) * (H - mt - mb);
+
+  let g = "";
+  ticks.forEach(v => {
+    g += `<line class="grid-line" x1="${ml}" x2="${w - mr}" y1="${Y(v)}" y2="${Y(v)}"/>` +
+         `<text class="axis-text" x="${ml - 8}" y="${Y(v)}" text-anchor="end" dominant-baseline="central">${v}</text>`;
+  });
+  const freeze = /F|℉/i.test(st.unit) ? 32 : 0;
+  if (freeze > ymin && freeze < ymax) g += `<line class="freeze-line" x1="${ml}" x2="${w - mr}" y1="${Y(freeze)}" y2="${Y(freeze)}"/>`;
+  const every = w < 520 ? 6 : 3;
+  for (let h = 0; h <= 24; h += every) {
+    const lbl = new Date(t0 + h * 3600000).toLocaleTimeString([], { hour: "numeric" });
+    g += `<text class="axis-text" x="${X(t0 + h * 3600000)}" y="${H - 8}" text-anchor="${h === 0 ? "start" : h === 24 ? "end" : "middle"}">${lbl}</text>`;
+  }
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
+  const last = pts[pts.length - 1];
+  g += `<path class="temp-area" d="${line}L${X(last[0]).toFixed(1)},${Y(ymin)}L${X(pts[0][0]).toFixed(1)},${Y(ymin)}Z"/>` +
+       `<path class="temp-line" d="${line}"/>`;
+  if (hasHx) {
+    let hxPath = "", pen = false;                      // start a new segment after any gap
+    pts.forEach(p => {
+      if (p[2] == null) { pen = false; return; }
+      hxPath += `${pen ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[2]).toFixed(1)}`;
+      pen = true;
+    });
+    g += `<path class="humidex-line" d="${hxPath}"/>`;
+    if (last[2] != null) g += `<circle class="now-dot" cx="${X(last[0])}" cy="${Y(last[2])}" r="4"/>`;
+  }
+  g += `<circle class="${hasHx ? "temp-now" : "now-dot"}" cx="${X(last[0])}" cy="${Y(last[1])}" r="5"/>` +
+       `<g id="hover" style="display:none"><line class="hover-line" y1="${mt}" y2="${H - mb}"/><circle class="hover-dot" r="5"/><circle class="hover-dot2" r="5" style="display:none"/></g>`;
+
+  host.innerHTML = `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="Line chart of today's temperature${hasHx ? " and humidex" : ""} in ${st.unit}">${g}</svg><div class="chart-tip" id="chartTip" hidden></div>`;
+
+  const svg = host.querySelector("svg"), hover = $("hover"), tip = $("chartTip");
+  const hl = hover.querySelector("line"), hd = hover.querySelector(".hover-dot"), hd2 = hover.querySelector(".hover-dot2");
+  const show = ev => {
+    const r = svg.getBoundingClientRect();
+    const mx = ev.clientX - r.left;
+    let best = pts[0];
+    pts.forEach(p => { if (Math.abs(X(p[0]) - mx) < Math.abs(X(best[0]) - mx)) best = p; });
+    const x = X(best[0]), y = Y(best[1]);
+    hl.setAttribute("x1", x); hl.setAttribute("x2", x);
+    hd.setAttribute("cx", x); hd.setAttribute("cy", y);
+    if (best[2] != null) { hd2.setAttribute("cx", x); hd2.setAttribute("cy", Y(best[2])); hd2.style.display = ""; }
+    else hd2.style.display = "none";
+    hover.style.display = "";
+    tip.hidden = false;
+    tip.innerHTML = `${new Date(best[0]).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}<b>${best[1].toFixed(1)} ${st.unit}</b>${best[2] != null ? `Humidex <b>${Math.round(best[2])}</b>` : ""}`;
+    tip.style.left = Math.min(Math.max(x, 50), w - 50) + "px";
+    tip.style.top = y + "px";
+    tip.style.transform = y < 70 ? "translate(-50%, 18px)" : "";   // flip below the point near the top edge
+  };
+  const hide = () => { hover.style.display = "none"; tip.hidden = true; };
+  svg.addEventListener("pointermove", show);
+  svg.addEventListener("pointerdown", show);
+  svg.addEventListener("pointerleave", hide);
+}
+
+let chartW = 0;
+new ResizeObserver(() => {
+  const w = Math.floor($("tempChart").clientWidth);
+  if (w !== chartW) { chartW = w; renderChart(); }
+}).observe($("tempChart"));
+
+async function loadDaily() {
+  const key = dailyKey();
+  const hit = dailyCache[key];
+  if (hit && Date.now() - hit.t < (hit.failed ? 60 : 300) * 1000) { renderDaily(); return; }
+
+  const c = getCfg();
+  const u = UNIT_SETS[prefs.units] || UNIT_SETS.metric;
+  const now = new Date();
+  const params = new URLSearchParams({
+    mac: c.mac, call_back: "outdoor", cycle_type: "5min",
+    start_date: `${dateStr(now)} 00:00:00`,
+    end_date: `${dateStr(now)} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+    temp_unitid: u.temp
+  });
+  if (c.proxyUrl) params.set("mode", "history");
+  else { params.set("application_key", c.applicationKey); params.set("api_key", c.apiKey); }
+  const base = c.proxyUrl || API_HISTORY;
+  const url = `${base}${base.includes("?") ? "&" : "?"}${params}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.code !== 0) throw new Error(`Ecowitt said: ${json.msg || "unknown error"} (code ${json.code})`);
+    const t = json.data && json.data.outdoor && json.data.outdoor.temperature;
+    const vals = t && t.list ? Object.values(t.list).map(Number).filter(Number.isFinite) : [];
+    if (!vals.length) throw new Error("no temperature history returned for today");
+    const dewList = (json.data.outdoor.dew_point && json.data.outdoor.dew_point.list) || {};
+    const tu = t.unit || "";
+    const pts = Object.entries(t.list)
+      .map(([k, v]) => {
+        const ts = /^\d+$/.test(k) ? Number(k) * 1000 : Date.parse(k.replace(" ", "T"));
+        let hx = null;
+        if (dewList[k] !== undefined && Number.isFinite(Number(dewList[k]))) {
+          const r = humidexNumber({ value: v, unit: tu }, { value: dewList[k], unit: tu });
+          hx = (r === undefined ? null : r);
+        }
+        return [ts, Number(v), hx];
+      })
+      .filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]))
+      .sort((a, b) => a[0] - b[0]);
+    dailyCache[key] = { t: Date.now(), hi: Math.max(...vals), lo: Math.min(...vals), unit: t.unit || "", pts };
+  } catch (err) {
+    console.warn("Daily high/low unavailable:", err);
+    dailyCache[key] = { t: Date.now(), failed: true };
+  }
+  if (key === dailyKey()) renderDaily();   // skip if the station or units changed meanwhile
+}
+
+/* ---------- historic data ---------- */
+const HIST_VIEWS = { year: "histYear", month: "histMonth", day: "histDay", raw: "histRaw" };
+let histView = "raw";
+function selectHistView(v) {
+  histView = v;
+  Object.entries(HIST_VIEWS).forEach(([k, id]) => { $(id).hidden = k !== v; });
+  document.querySelectorAll("[data-hist]").forEach(b => b.setAttribute("aria-pressed", b.dataset.hist === v));
+  refreshHistoric();
+}
+document.querySelectorAll("[data-hist]").forEach(b => { b.onclick = () => selectHistView(b.dataset.hist); });
+
+// Load whatever the visible historic view needs (only when it is actually showing)
+function refreshHistoric() {
+  if (view !== "historic") return;
+  if (histView === "raw") { updateRawBounds(); loadRaw(); }
+  else if (histView === "day") { updateRawBounds(); loadDayStats(); }
+  else if (histView === "year") { updateRawBounds(); updateYrBounds(); loadYear(); }
+  else if (histView === "month") { updateRawBounds(); updateMonBounds(); loadMonth(); }
+}
+
+/* --- raw daily data ---
+   Asks Ecowitt's history endpoint for every sensor it logged on the chosen day and
+   lays the result out as a table (one column per sensor value, one row per timestamp).
+   Columns come from whatever the API returns, so extra sensors show up on their own.
+   Ecowitt keeps about 90 days of 5-minute data, a year of 30-minute data and two
+   years of 4-hour data, so older days automatically use the finest resolution left. */
+const RAW_CALLBACKS = [
+  "all",
+  "outdoor,indoor,solar_and_uvi,rainfall_piezo,rainfall,wind,pressure,battery"   // fallback if "all" is refused
+];
+const RAW_MAX_DAYS_BACK = 730;
+const rawCache = {};
+let rawReq = 0, rawLoadedKey = "";
+const rawKey = () => `${prefs.station}|${prefs.units}|${$("rawDate").value}`;
+const esc = t => String(t).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+const parseTs = k => /^\d+$/.test(k) ? Number(k) * 1000 : Date.parse(String(k).replace(" ", "T"));
+const WORDS = { uvi: "UV index", pm25: "PM2.5", co2: "CO2" };
+const prettify = k => String(k).split("_").map((w, i) => WORDS[w] || (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
+
+function rawMsg(text) {
+  $("rawTable").innerHTML = "";
+  $("rawStatus").textContent = text;
+}
+
+function walkHistory(node, path, out) {
+  if (!node || typeof node !== "object") return;
+  if (node.list && typeof node.list === "object" && !Array.isArray(node.list)) { out.push({ path, unit: node.unit || "", list: node.list }); return; }
+  Object.entries(node).forEach(([k, v]) => walkHistory(v, path.concat(k), out));
+}
+
+// Both services limit how fast they can be called, so history requests are spaced out
+// (a month view makes ~30 of them). Each service has its own queue.
+// The gap starts short, grows when a request fails and shrinks again as requests succeed.
+const nextSlot = {};
+const GAPS = { ecowitt: { cur: 700, min: 700, max: 3000 }, wu: { cur: 1000, min: 1000, max: 3000 } };
+const slower = () => Object.values(GAPS).forEach(g => { g.cur = Math.min(g.max, Math.round(g.cur * 1.6)); });
+const faster = () => Object.values(GAPS).forEach(g => { g.cur = Math.max(g.min, Math.round(g.cur * 0.96)); });
+async function throttle(kind) {
+  const t = Math.max(Date.now(), nextSlot[kind] || 0);
+  nextSlot[kind] = t + GAPS[kind].cur;
+  const w = t - Date.now();
+  if (w > 0) await new Promise(r => setTimeout(r, w));
+}
+
+async function fetchRawEcowitt(c, dateVal) {
+  const u = UNIT_SETS[prefs.units] || UNIT_SETS.metric;
+  const day = new Date(dateVal + "T00:00:00");
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const daysAgo = Math.round((todayStart - day) / 86400000);
+  const cycle = daysAgo <= 90 ? "5min" : daysAgo <= 365 ? "30min" : "4hour";
+  const now = new Date();
+  const end = daysAgo === 0 ? `${dateStr(now)} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}` : `${dateVal} 23:59:59`;
+  let lastErr = null;
+
+  for (const cb of RAW_CALLBACKS) {
+    const params = new URLSearchParams({
+      mac: c.mac, call_back: cb, cycle_type: cycle,
+      start_date: `${dateVal} 00:00:00`, end_date: end,
+      temp_unitid: u.temp, pressure_unitid: u.pressure,
+      wind_speed_unitid: u.wind, rainfall_unitid: u.rain, solar_radiation_unitid: u.solar
+    });
+    if (c.proxyUrl) params.set("mode", "history");
+    else { params.set("application_key", c.applicationKey); params.set("api_key", c.apiKey); }
+    const base = c.proxyUrl || API_HISTORY;
+    try {
+      await throttle("ecowitt");
+      const res = await fetch(`${base}${base.includes("?") ? "&" : "?"}${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.code !== 0) throw new Error(`Ecowitt said: ${json.msg || "unknown error"} (code ${json.code})`);
+      const found = [];
+      walkHistory(json.data, [], found);
+      if (!found.length) { lastErr = null; continue; }   // empty reply, try the next call_back
+      return { cycle, daysAgo, found, source: "Ecowitt" };
+    } catch (err) { lastErr = err; }
+  }
+  if (lastErr) throw lastErr;
+  return { cycle, daysAgo, found: [], source: "Ecowitt" };
+}
+
+const wuReady = c => !!c.wuApiKey && !!c.wuStationId && !placeholder(c.wuApiKey) && !placeholder(c.wuStationId);
+
+// Weather Underground's "all observations for one day" call, reshaped to look like
+// Ecowitt's history reply ({ path, unit, list }) so the same table code can draw it.
+async function fetchRawWU(c, dateVal, daysAgo) {
+  const imperial = prefs.units === "imperial";
+  const params = new URLSearchParams({
+    stationId: c.wuStationId, format: "json", units: imperial ? "e" : "m",
+    date: dateVal.replace(/-/g, ""), numericPrecision: "decimal"
+  });
+  if (!CONFIG.wuProxyUrl) params.set("apiKey", c.wuApiKey);
+  const base = CONFIG.wuProxyUrl || WU_HISTORY_ALL;
+  await throttle("wu");
+  const res = await fetch(`${base}${base.includes("?") ? "&" : "?"}${params}`);
+  const done = found => ({ cycle: "wu", daysAgo, found, source: "Weather Underground" });
+  if (res.status === 204) return done([]);                      // no observations that day
+  if (!res.ok) {
+    let why = "";
+    try { const j = await res.json(); why = j && j.errors && j.errors[0] && j.errors[0].error && j.errors[0].error.message || ""; } catch (e) {}
+    why = why.replace(/[.\s]+$/, "");
+    const hint = res.status === 401 ? "the API key was rejected" : res.status === 404 ? "the station ID or date wasn't found" : "the request failed";
+    throw new Error(`Weather Underground: ${hint} (HTTP ${res.status})${why ? " - " + why : ""}`);
+  }
+  const json = await res.json();
+  const obs = Array.isArray(json.observations) ? json.observations : [];
+  if (!obs.length) return done([]);
+
+  const U = imperial
+    ? { temp: "°F", wind: "mph", pressure: "inHg", rain: "in", rate: "in/hr" }
+    : { temp: "°C", wind: "km/h", pressure: "hPa", rain: "mm", rate: "mm/hr" };
+
+  // Each Weather Underground reading summarises one reporting interval, so most sensors come as
+  // Average / High / Low. Humidity, wind direction, solar and UV sit at the top level of the
+  // reading ("t"); the rest sit inside its metric / imperial block ("b").
+  const tri = (group, key, unit, where) =>
+    [["Average", "Avg"], ["High", "High"], ["Low", "Low"]].map(([label, suffix]) => [group, label, unit, where, key + suffix]);
+  const SPEC = [
+    ...tri("Temperature", "temp", U.temp, "b"),
+    ...tri("Dew point", "dewpt", U.temp, "b"),
+    ...tri("Humidity", "humidity", "%", "t"),
+    ...tri("Heat index", "heatindex", U.temp, "b"),
+    ...tri("Wind chill", "windchill", U.temp, "b"),
+    ...tri("Wind speed", "windspeed", U.wind, "b"),
+    ...tri("Wind gust", "windgust", U.wind, "b"),
+    ["Wind direction", "Average", "°", "t", "winddirAvg"],
+    ["Pressure", "Max", U.pressure, "b", "pressureMax"],
+    ["Pressure", "Min", U.pressure, "b", "pressureMin"],
+    ["Pressure", "Trend", U.pressure, "b", "pressureTrend"],
+    ["Rain", "Rate", U.rate, "b", "precipRate"],
+    ["Rain", "Total", U.rain, "b", "precipTotal"],
+    ["Solar radiation", "High", "W/m²", "t", "solarRadiationHigh"],
+    ["UV index", "High", "", "t", "uvHigh"]
+  ];
+  const block = o => o.imperial || o.metric || o.metric_si || o.uk_hybrid || {};
+  const val = (o, where, key) => where === "t" ? o[key] : block(o)[key];
+
+  // Also pick up any other numeric field Weather Underground sends, so nothing is silently dropped.
+  const IGNORE = new Set(["epoch", "lat", "lon", "qcStatus", "realtimeFrequency", "elev"]);
+  const known = new Set(SPEC.map(x => x[4]));
+  const extra = new Map();
+  obs.forEach(o => {
+    Object.entries(o).forEach(([k, v]) => { if (typeof v === "number" && !IGNORE.has(k) && !known.has(k)) extra.set("t:" + k, ["t", k]); });
+    Object.entries(block(o)).forEach(([k, v]) => { if (typeof v === "number" && !IGNORE.has(k) && !known.has(k)) extra.set("b:" + k, ["b", k]); });
+  });
+  const nice = k => k.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  extra.forEach(([where, key]) => SPEC.push([nice(key), "", "", where, key]));
+
+  // Columns left out of the table. They are still read, because the calculated humidex and
+  // wind chill below use the average temperature, dew point and wind speed.
+  const HIDE = new Set([
+    "tempAvg", "tempLow", "dewptAvg", "dewptLow", "humidityAvg", "humidityLow",
+    "heatindexAvg", "heatindexHigh", "heatindexLow", "windchillAvg", "windchillHigh", "windchillLow",
+    "windspeedLow", "windgustLow"
+  ]);
+  const found = [], foundAll = [];    // foundAll also holds the hidden columns, for the By day stats
+  SPEC.forEach(([group, label, unit, where, key]) => {
+    const list = {};
+    obs.forEach(o => {
+      const v = val(o, where, key);
+      if (v !== null && v !== undefined && v !== "" && o.epoch) list[String(o.epoch)] = v;
+    });
+    if (Object.keys(list).length) {
+      const item = { path: label ? [group, label] : [group], unit, list };
+      foundAll.push(item);
+      if (!HIDE.has(key)) found.push(item);
+    }
+  });
+
+  // Humidex and wind chill, calculated here with the same formulas and display rules as the cards
+  // and the Ecowitt table, from each reading's average temperature, dew point and wind speed.
+  const hxList = {}, wcList = {};
+  obs.forEach(o => {
+    const b = block(o);
+    if (!o.epoch || b.tempAvg === null || b.tempAvg === undefined) return;
+    const k = String(o.epoch), t = { value: b.tempAvg, unit: U.temp };
+    if (b.dewptAvg !== null && b.dewptAvg !== undefined) {
+      const r = humidexNumber(t, { value: b.dewptAvg, unit: U.temp });
+      if (r !== undefined) hxList[k] = r === null ? "N/A" : String(Math.round(r));
+    }
+    if (b.windspeedAvg !== null && b.windspeedAvg !== undefined) {
+      const r = windChillText(t, { value: b.windspeedAvg, unit: U.wind });
+      if (r !== "--") wcList[k] = r;
+    }
+  });
+  const derived = [];
+  if (Object.keys(hxList).length) derived.push({ path: ["Humidex"], unit: "", list: hxList });
+  if (Object.keys(wcList).length) derived.push({ path: ["Wind chill"], unit: "", list: wcList });
+  const ti = found.findIndex(f => f.path[0] === "Temperature" && f.path[1] === "High");
+  found.splice(ti + 1, 0, ...derived);                 // right after Temperature High
+  foundAll.push(...derived);
+
+  const eps = obs.map(o => Number(o.epoch)).filter(Number.isFinite).sort((a, b) => a - b);
+  const gaps = eps.slice(1).map((e, i) => e - eps[i]).filter(g => g > 0).sort((a, b) => a - b);
+  const med = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+  const out = done(found);
+  out.all = foundAll;
+  out.label = med ? (med < 3600 ? `${Math.round(med / 60)}-minute` : `${Math.round(med / 3600)}-hour`) : "";
+  return out;
+}
+
+// Days newer than ecowittFullDetailDays come from Ecowitt (every sensor). Older days come from
+// Weather Underground when it is set up for the station, with Ecowitt's coarser archive as a fallback.
+async function fetchRawDay(c, dateVal) {
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const daysAgo = Math.round((todayStart - new Date(dateVal + "T00:00:00")) / 86400000);
+  if (daysAgo <= CONFIG.ecowittFullDetailDays || !wuReady(c)) return fetchRawEcowitt(c, dateVal);
+  const tooOldForEcowitt = daysAgo > RAW_MAX_DAYS_BACK;
+  try {
+    const r = await fetchRawWU(c, dateVal, daysAgo);
+    if (r.found.length || tooOldForEcowitt) return r;
+  } catch (err) {
+    if (tooOldForEcowitt) throw err;
+    console.warn("Weather Underground failed, falling back to Ecowitt:", err);
+  }
+  return fetchRawEcowitt(c, dateVal);
+}
+
+// Ecowitt raw table only: take out the "feels like" and "app temp" columns and put calculated
+// humidex (outdoor and indoor) and outdoor wind chill in their place, using the same formulas
+// and display rules as the cards. Cells where a value doesn't apply show "N/A".
+const DROP_RE = /^(feels_like|app_temp)/;
+function adjustEcowitt(found) {
+  const find = (g, k) => found.find(f => f.path.length > 1 && f.path[0] === g && f.path[1] === k);
+  const oT = find("outdoor", "temperature"), oD = find("outdoor", "dew_point"), wS = find("wind", "wind_speed");
+  const iT = find("indoor", "temperature"), iH = find("indoor", "humidity"), iD = find("indoor", "dew_point");
+  const obj = (f, k) => ({ value: f.list[k], unit: f.unit });
+  const derived = { outdoor: [], indoor: [] };
+
+  if (oT && oD) {
+    const list = {};
+    Object.keys(oT.list).forEach(k => {
+      if (oD.list[k] === undefined) return;
+      const r = humidexNumber(obj(oT, k), { value: oD.list[k], unit: oD.unit || oT.unit });
+      if (r !== undefined) list[k] = r === null ? "N/A" : String(Math.round(r));
+    });
+    derived.outdoor.push({ path: ["outdoor", "humidex"], unit: "", list });
+  }
+  if (oT && wS) {
+    const list = {};
+    Object.keys(oT.list).forEach(k => {
+      if (wS.list[k] === undefined) return;
+      const r = windChillText(obj(oT, k), obj(wS, k));
+      if (r !== "--") list[k] = r;
+    });
+    derived.outdoor.push({ path: ["outdoor", "wind_chill"], unit: "", list });
+  }
+  if (iT && (iD || iH)) {
+    const list = {};
+    Object.keys(iT.list).forEach(k => {
+      const t = obj(iT, k);
+      const dew = iD && iD.list[k] !== undefined ? { value: iD.list[k], unit: iD.unit || iT.unit }
+                : iH && iH.list[k] !== undefined ? dewPointFrom(t, { value: iH.list[k] }) : null;
+      if (!dew) return;
+      const r = humidexNumber(t, dew, true);          // indoor humidex has no display rule
+      if (r !== undefined && r !== null) list[k] = String(Math.round(r));
+    });
+    derived.indoor.push({ path: ["indoor", "humidex"], unit: "", list });
+  }
+
+  const out = [], at = { outdoor: -1, indoor: -1 };
+  found.forEach(f => {
+    const g = f.path[0];
+    if ((g === "outdoor" || g === "indoor") && f.path.length > 1 && DROP_RE.test(f.path[1])) {
+      if (at[g] < 0) at[g] = out.length;              // new columns go where the old one was
+      return;
+    }
+    out.push(f);
+  });
+  ["indoor", "outdoor"].map(g => [g, at[g]]).sort((a, b) => b[1] - a[1]).forEach(([g, idx]) => {
+    if (!derived[g].length) return;
+    if (idx < 0) {                                    // nothing was removed: add after the group's last column
+      idx = out.map(f => f.path[0]).lastIndexOf(g) + 1;
+      if (idx === 0) idx = out.length;
+    }
+    out.splice(idx, 0, ...derived[g]);
+  });
+  return out;
+}
+
+function buildRaw(res) {
+  const found = res.source === "Ecowitt" ? adjustEcowitt(res.found) : res.found;
+  const cols = found.map(f => {
+    const map = new Map();
+    Object.entries(f.list).forEach(([k, v]) => { const ts = parseTs(k); if (Number.isFinite(ts)) map.set(ts, v); });
+    const cat = f.path.length > 1 ? prettify(f.path[0]) : "";
+    const name = prettify(f.path.length > 1 ? f.path.slice(1).join("_") : f.path[0]);
+    return { cat, name, unit: f.unit, map };
+  });
+  const times = [...new Set(cols.flatMap(c => [...c.map.keys()]))].sort((a, b) => a - b);
+  let stats = null;
+  try { stats = computeDayStats(res.all || found, res.source); } catch (err) { console.warn("Day stats failed:", err); }
+  return { cols, times, cycle: res.cycle, label: res.label, source: res.source, daysAgo: res.daysAgo, stats };
+}
+
+function renderRaw(data, dateVal) {
+  const { cols, times, cycle, source } = data;
+  const dayLabel = new Date(dateVal + "T00:00:00").toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  if (!times.length) {
+    rawMsg(`No data was found for ${dayLabel}${source ? " from " + source : ""}.` +
+      (source === "Ecowitt" ? " Ecowitt keeps about 90 days of 5-minute readings, a year of 30-minute readings and two years of 4-hour readings." : ""));
+    return;
+  }
+  const label = data.label || { "5min": "5-minute", "30min": "30-minute", "4hour": "4-hour" }[cycle] || "";
+  $("rawStatus").textContent = `${dayLabel}: ${times.length} readings${label ? " at " + label + " intervals" : ""}${source ? " from " + source : ""}, ${cols.length} sensor value${cols.length === 1 ? "" : "s"} each.`;
+  const head = `<tr><th scope="col">Time</th>${cols.map(c =>
+    `<th scope="col">${c.cat ? `<span class="th-cat">${esc(c.cat)}</span>` : ""}${esc(c.name)}${c.unit ? ` (${esc(c.unit)})` : ""}</th>`).join("")}</tr>`;
+  const body = times.map(t => {
+    const time = new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `<tr><td>${time}</td>${cols.map(c => c.map.has(t) ? `<td${c.map.get(t) === "N/A" ? ' class="na"' : ""}>${esc(c.map.get(t))}</td>` : "<td></td>").join("")}</tr>`;
+  }).join("");
+  $("rawTable").innerHTML = `<table class="raw"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+async function loadRaw() {
+  const dateVal = $("rawDate").value;
+  if (!dateVal) return;
+  updateRawNav();
+  const key = rawKey();
+  if (key === rawLoadedKey) return;
+  const c = getCfg();
+  const my = ++rawReq;
+  if (!c.proxyUrl && (placeholder(c.applicationKey) || placeholder(c.apiKey) || !c.apiKey || !c.applicationKey) || placeholder(c.mac) || !c.mac) {
+    rawMsg("Add this station's application key, API key and MAC address in CONFIG to load its data.");
+    rawLoadedKey = "";
+    return;
+  }
+  const hit = rawCache[key];
+  if (hit && (hit.daysAgo > 0 || Date.now() - hit.t < 300000)) { rawLoadedKey = key; renderRaw(hit.data, dateVal); return; }
+
+  rawMsg("Loading...");
+  try {
+    const data = await ensureDay(dateVal);
+    if (my !== rawReq) return;                       // a newer request took over
+    rawLoadedKey = key;
+    renderRaw(data, dateVal);
+  } catch (err) {
+    if (my !== rawReq) return;
+    console.warn("Raw daily data failed:", err);
+    rawLoadedKey = "";
+    rawMsg(err instanceof TypeError
+      ? "Couldn't reach the Ecowitt API. Check your connection, or set proxyUrl in CONFIG if the browser is blocking the request."
+      : `The data didn't load. ${err.message}.`);
+  }
+}
+
+/* --- one date picker shared by Raw daily data and By day --- */
+const DAY_PICKERS = ["raw", "day"];
+function updateNav(p) {
+  const d = $(p + "Date");
+  $(p + "Prev").disabled = !!d.min && d.value <= d.min;
+  $(p + "Next").disabled = !!d.max && d.value >= d.max;
+  $(p + "Today").disabled = d.value === d.max;
+}
+function updateRawNav() { DAY_PICKERS.forEach(updateNav); }
+function syncDates(v) { DAY_PICKERS.forEach(p => { $(p + "Date").value = v; }); updateRawNav(); }
+function updateRawBounds() {
+  const c = getCfg();
+  let min;
+  if (wuReady(c)) min = c.historyStart || "2022-05-01";
+  else { const m = new Date(); m.setDate(m.getDate() - RAW_MAX_DAYS_BACK); min = dateStr(m); }
+  DAY_PICKERS.forEach(p => { const d = $(p + "Date"); d.min = min; if (d.value && d.value < min) d.value = min; });
+  syncDates($("rawDate").value);
+}
+function setDay(v) {
+  const d = $("rawDate");
+  if (v > d.max) v = d.max;
+  if (v < d.min) v = d.min;
+  syncDates(v);
+  refreshHistoric();
+}
+function shiftDay(n) {
+  const v = $("rawDate").value;
+  if (!v) return;
+  const dt = new Date(v + "T00:00:00");
+  dt.setDate(dt.getDate() + n);
+  setDay(dateStr(dt));
+}
+(function initDayControls() {
+  const today = dateStr(new Date());
+  DAY_PICKERS.forEach(p => {
+    const d = $(p + "Date");
+    d.max = today; d.value = today;
+    d.addEventListener("change", () => { if (d.value) setDay(d.value); });
+    $(p + "Prev").onclick = () => shiftDay(-1);
+    $(p + "Next").onclick = () => shiftDay(1);
+    $(p + "Today").onclick = () => setDay(d.max);
+  });
+  updateRawBounds();
+})();
+
+/* --- one day's data, fetched once and shared by both views --- */
+async function ensureDay(dateVal) {
+  const c = getCfg();
+  const key = `${prefs.station}|${prefs.units}|${dateVal}`;
+  const hit = rawCache[key];
+  if (hit && (hit.daysAgo > 0 || Date.now() - hit.t < 300000)) return hit.data;
+  if (inFlight[key]) return inFlight[key];                // someone is already fetching this day: share it
+  inFlight[key] = (async () => {
+    try {
+      const data = buildRaw(await fetchRawDay(c, dateVal));
+      rawCache[key] = { t: Date.now(), daysAgo: data.daysAgo, data };
+      return data;
+    } finally { delete inFlight[key]; }
+  })();
+  return inFlight[key];
+}
+const inFlight = {};
+
+/* --- By day: the day's highs, lows and totals, with the time each happened ---
+   Works from the same readings as the raw table (Ecowitt for the last 90 days, Weather
+   Underground for older days). Weather Underground readings carry their own high and low,
+   so those are used for the highs and lows; Ecowitt's come from its 5-minute readings. */
+const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+function computeDayStats(found, source) {
+  const wu = source === "Weather Underground";
+  const index = new Map(found.map(f => [f.path.join("|"), f]));
+  const get = p => index.get(p.join("|"));
+  const series = f => !f ? [] : Object.entries(f.list)
+    .map(([k, v]) => [parseTs(k), (v === null || v === undefined || v === "") ? NaN : Number(v)])
+    .filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]))      // "N/A" cells drop out here
+    .sort((a, b) => a[0] - b[0]);
+
+  // Ecowitt can log rain in a "rainfall" group or a "rainfall_piezo" group; use the one that recorded more.
+  let rg = "rainfall";
+  if (!wu) {
+    const top = g => { const sr = series(get([g, "daily"])); return sr.length ? Math.max(...sr.map(p => p[1])) : -1; };
+    if (top("rainfall_piezo") > top("rainfall")) rg = "rainfall_piezo";
+  }
+  const P = wu ? {
+    hi: ["Temperature", "High"], lo: ["Temperature", "Low"], hx: ["Humidex"], wc: ["Wind chill"],
+    dHi: ["Dew point", "High"], dLo: ["Dew point", "Low"], rHi: ["Humidity", "High"], rLo: ["Humidity", "Low"],
+    ws: ["Wind speed", "Average"], wg: ["Wind gust", "High"], uv: ["UV index", "High"],
+    pt: ["Rain", "Total"], pr: ["Rain", "Rate"],
+    bHi: ["Pressure", "Max"], bLo: ["Pressure", "Min"]
+  } : {
+    hi: ["outdoor", "temperature"], lo: ["outdoor", "temperature"], hx: ["outdoor", "humidex"], wc: ["outdoor", "wind_chill"],
+    dHi: ["outdoor", "dew_point"], dLo: ["outdoor", "dew_point"], rHi: ["outdoor", "humidity"], rLo: ["outdoor", "humidity"],
+    ws: ["wind", "wind_speed"], wg: ["wind", "wind_gust"], uv: ["solar_and_uvi", "uvi"],
+    pt: [rg, "daily"], pr: [rg, "rain_rate"],
+    bHi: ["pressure", "relative"], bLo: ["pressure", "relative"]
+  };
+  const dp = prefs.units === "imperial" ? 2 : 1;                      // inches need two decimals
+  const withUnit = (n, digits, f) => n.toFixed(digits) + (f && f.unit ? " " + f.unit : "");
+
+  // The highest or lowest value and the (earliest) time it happened
+  const extreme = (label, path, mode, digits, noTimeAtZero) => {
+    const f = get(path), sr = series(f);
+    if (!sr.length) return { label, value: f ? "N/A" : "--", time: "" };
+    let best = sr[0];
+    sr.forEach(p => { if (mode === "max" ? p[1] > best[1] : p[1] < best[1]) best = p; });
+    return { label, value: withUnit(best[1], digits, f), time: noTimeAtZero && best[1] <= 0 ? "" : fmtTime(best[0]),
+             num: best[1], ts: best[0], unit: f && f.unit ? f.unit : "" };
+  };
+
+  const rows = [];
+  rows.push(extreme("Daily high", P.hi, "max", 1));
+  rows.push(extreme("Daily low", P.lo, "min", 1));
+  rows.push(extreme("Maximum humidex", P.hx, "max", 0));
+  rows.push(extreme("Minimum wind chill", P.wc, "min", 0));
+  rows.push(extreme("Highest dew point", P.dHi, "max", 1));
+  rows.push(extreme("Lowest dew point", P.dLo, "min", 1));
+  rows.push(extreme("Highest relative humidity", P.rHi, "max", 0));
+  rows.push(extreme("Lowest relative humidity", P.rLo, "min", 0));
+
+  const wf = get(P.ws), wsr = series(wf);
+  rows.push({ label: "Average wind speed", time: "whole day",
+    value: wsr.length ? withUnit(wsr.reduce((a, p) => a + p[1], 0) / wsr.length, 1, wf) : "--",
+    num: wsr.length ? wsr.reduce((a, p) => a + p[1], 0) / wsr.length : NaN, unit: wf && wf.unit ? wf.unit : "" });
+
+  rows.push(extreme("Maximum barometric pressure", P.bHi, "max", prefs.units === "imperial" ? 2 : 1));
+  rows.push(extreme("Minimum barometric pressure", P.bLo, "min", prefs.units === "imperial" ? 2 : 1));
+  rows.push(extreme("Maximum wind gust", P.wg, "max", 1));
+  rows.push(extreme("Maximum UV index", P.uv, "max", 1, true));
+
+  // Total precipitation is the day's running total at its largest. The time column shows when it rained.
+  const tf = get(P.pt), tsr = series(tf);
+  let first = null, last = null, prev = 0;
+  tsr.forEach(([t, v]) => { if (v > prev + 1e-9) { if (first === null) first = t; last = t; } prev = v; });
+  const total = tsr.length ? Math.max(...tsr.map(p => p[1])) : null;
+  rows.push({ label: "Total precipitation",
+    value: total === null ? "--" : withUnit(total, dp, tf),
+    time: total > 0 && first !== null ? (first === last ? fmtTime(first) : `${fmtTime(first)} to ${fmtTime(last)}`) : "",
+    num: total, ts: first, unit: tf && tf.unit ? tf.unit : "" });
+
+  rows.push(extreme("Highest rainfall rate", P.pr, "max", dp, true));
+
+  // Hidden rows, used only by the month view: the day's average humidex and wind chill
+  // (over the readings where they apply). Not shown in the By day table.
+  [["Mean humidex", P.hx], ["Mean wind chill", P.wc]].forEach(([label, path]) => {
+    const f = get(path), sr = series(f);
+    if (sr.length) rows.push({ label, hidden: true, value: "", time: "", num: sr.reduce((a, p) => a + p[1], 0) / sr.length, ts: sr[0][0], unit: "" });
+  });
+  // Wind direction can't be averaged like a number (350 and 10 degrees average to north, not 180), so keep the sums
+  // of each reading's direction as a unit vector. The month view adds these up across days.
+  const df = get(wu ? ["Wind direction", "Average"] : ["wind", "wind_direction"]);
+  const dsr = series(df).filter(p => p[1] >= 0 && p[1] <= 360);
+  if (dsr.length) {
+    const sx = dsr.reduce((a, p) => a + Math.sin(p[1] * Math.PI / 180), 0), sy = dsr.reduce((a, p) => a + Math.cos(p[1] * Math.PI / 180), 0);
+    rows.push({ label: "Wind direction vector", hidden: true, value: "", time: "", num: 0, ts: dsr[0][0], unit: "", sx, sy, n: dsr.length });
+  }
+  return rows;
+}
+
+function dayMsg(text) {
+  $("dayStats").innerHTML = "";
+  $("dayStatus").textContent = text;
+}
+
+function renderDayStats(data, dateVal) {
+  const dayLabel = new Date(dateVal + "T00:00:00").toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  if (!data.times.length || !data.stats) {
+    dayMsg(`No data was found for ${dayLabel}${data.source ? " from " + data.source : ""}.`);
+    return;
+  }
+  const isToday = dateVal === $("dayDate").max;
+  const label = data.label || { "5min": "5-minute", "30min": "30-minute", "4hour": "4-hour" }[data.cycle] || "";
+  $("dayStatus").textContent = `${dayLabel}${isToday ? " (so far)" : ""}: ${data.times.length} readings${label ? " at " + label + " intervals" : ""} from ${data.source}.`;
+  const body = data.stats.filter(r => !r.hidden).map(r =>
+    `<tr><th scope="row">${esc(r.label)}</th><td class="v">${esc(r.value)}</td><td class="t">${esc(r.time || "\u2014")}</td></tr>`).join("");
+  const note = data.source === "Weather Underground"
+    ? "Highs and lows use the high and low recorded within each reading. Humidex and wind chill are calculated from each reading's average temperature, dew point and wind speed."
+    : `Highs and lows come from the station's ${label || "logged"} readings, so a brief peak between two readings can be missed. Humidex and wind chill are calculated from those readings.`;
+  $("dayStats").innerHTML = `<table class="stats-table"><thead><tr><th>Measure</th><th>Value</th><th>Time</th></tr></thead><tbody>${body}</tbody></table>` +
+    `<p class="stats-note">${esc(note)} If a value was reached more than once, the earliest time is shown. Times are in this browser's time zone.</p>`;
+}
+
+let dayReq = 0;
+async function loadDayStats() {
+  const dateVal = $("dayDate").value;
+  if (!dateVal) return;
+  updateRawNav();
+  const c = getCfg(), my = ++dayReq;
+  if (!c.proxyUrl && (placeholder(c.applicationKey) || placeholder(c.apiKey) || !c.apiKey || !c.applicationKey) || placeholder(c.mac) || !c.mac) {
+    dayMsg("Add this station's application key, API key and MAC address in CONFIG to load its data.");
+    return;
+  }
+  if (!rawCache[`${prefs.station}|${prefs.units}|${dateVal}`]) dayMsg("Loading...");
+  try {
+    const data = await ensureDay(dateVal);
+    if (my !== dayReq) return;                       // a newer request took over
+    renderDayStats(data, dateVal);
+  } catch (err) {
+    if (my !== dayReq) return;
+    console.warn("Daily stats failed:", err);
+    dayMsg(err instanceof TypeError
+      ? "Couldn't reach the data service. Check your connection, or set proxyUrl / wuProxyUrl in CONFIG if the browser is blocking the request."
+      : `The data didn't load. ${err.message}.`);
+  }
+}
+
+/* --- By month ---
+   Built from the same per-day stats as the By day view: one day at a time (a few at once),
+   each day cached, so going back to a month you've seen is instant. */
+const monthStr = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+function updateMonNav() {
+  const m = $("monDate");
+  $("monPrev").disabled = !!m.min && m.value <= m.min;
+  $("monNext").disabled = !!m.max && m.value >= m.max;
+  $("monToday").disabled = m.value === m.max;
+}
+function updateMonBounds() {
+  const m = $("monDate");
+  m.max = monthStr(new Date());
+  m.min = $("rawDate").min ? $("rawDate").min.slice(0, 7) : "";
+  if (!m.value) m.value = m.max;
+  if (m.min && m.value < m.min) m.value = m.min;
+  updateMonNav();
+}
+function setMonth(v) {
+  const m = $("monDate");
+  if (!v) return;
+  if (v > m.max) v = m.max;
+  if (m.min && v < m.min) v = m.min;
+  m.value = v;
+  refreshHistoric();
+}
+function shiftMonth(n) {
+  const [y, mo] = $("monDate").value.split("-").map(Number);
+  setMonth(monthStr(new Date(y, mo - 1 + n, 1)));
+}
+(function initMonControls() {
+  const m = $("monDate");
+  m.max = monthStr(new Date()); m.value = m.max;
+  m.addEventListener("change", () => setMonth(m.value));
+  $("monPrev").onclick = () => shiftMonth(-1);
+  $("monNext").onclick = () => shiftMonth(1);
+  $("monToday").onclick = () => setMonth(m.max);
+})();
+
+function monMsg(text) { $("monCards").innerHTML = ""; $("monStatus").textContent = text; }
+
+const savedKey = ds => `ws-day-v3|${prefs.station}|${prefs.units}|${ds}`;
+function loadSavedDay(ds) {
+  try {
+    const raw = localStorage.getItem(savedKey(ds));
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return { date: ds, rows: Object.fromEntries(v.rows.map(r => [r.label, r])), source: v.source };
+  } catch (e) { return null; }
+}
+function saveDay(ds, data) {
+  try { localStorage.setItem(savedKey(ds), JSON.stringify({ source: data.source, rows: data.stats })); } catch (e) { /* storage full or blocked: just skip */ }
+}
+
+/* --- finished days saved by scripts/update-history.mjs ---
+   One small JSON file per station holds a record for every finished day (always in metric). When it's there,
+   months and years load from it instantly. Days it doesn't have yet (today, last night) load live as before. */
+const historyFiles = {};
+function loadHistoryFile() {
+  const id = station().historyId;
+  if (!id) return Promise.resolve(null);
+  if (!historyFiles[id]) {
+    historyFiles[id] = fetch(`${CONFIG.historyFolder || "data/"}history-${id}.json`, { cache: "no-cache" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => j && Array.isArray(j.days) ? new Map(j.days.map(d => [d.d, d])) : null)
+      .catch(() => null);
+    historyFiles[id].then(m => { if (!m) delete historyFiles[id]; });   // missing file: try again next time
+  }
+  return historyFiles[id];
+}
+
+// A saved record -> the same row objects the live code makes, in the unit system currently selected
+function recordToDay(rec) {
+  const imp = prefs.units === "imperial";
+  const T = c => imp ? c * 9 / 5 + 32 : c, W = v => imp ? v * 0.621371 : v, B = v => imp ? v * 0.02953 : v, R = v => imp ? v / 25.4 : v;
+  const tU = imp ? "°F" : "°C", wU = imp ? "mph" : "km/h", bU = imp ? "inHg" : "hPa", rU = imp ? "in" : "mm", rrU = imp ? "in/hr" : "mm/hr";
+  const rows = {}, r = rec.r || {};
+  const pair = (label, key, conv, unit) => { if (r[key]) rows[label] = { label, num: conv(r[key][0]), ts: r[key][1], unit }; };
+  pair("Daily high", "hi", T, tU); pair("Daily low", "lo", T, tU);
+  pair("Maximum humidex", "hx", T, ""); pair("Minimum wind chill", "wc", T, "");
+  pair("Highest dew point", "dh", T, tU); pair("Lowest dew point", "dl", T, tU);
+  pair("Highest relative humidity", "rh", v => v, "%"); pair("Lowest relative humidity", "rl", v => v, "%");
+  pair("Maximum barometric pressure", "bh", B, bU); pair("Minimum barometric pressure", "bl", B, bU);
+  pair("Maximum wind gust", "wg", W, wU); pair("Maximum UV index", "uv", v => v, "");
+  pair("Highest rainfall rate", "pr", R, rrU);
+  if (r.ws !== undefined) rows["Average wind speed"] = { label: "Average wind speed", num: W(r.ws), ts: null, unit: wU };
+  if (r.pt) rows["Total precipitation"] = { label: "Total precipitation", num: R(r.pt[0]), ts: r.pt[1], unit: rU };
+  if (r.hm !== undefined) rows["Mean humidex"] = { label: "Mean humidex", num: T(r.hm), ts: null, unit: "" };
+  if (r.cm !== undefined) rows["Mean wind chill"] = { label: "Mean wind chill", num: T(r.cm), ts: null, unit: "" };
+  if (r.dv) rows["Wind direction vector"] = { label: "Wind direction vector", num: 0, ts: null, unit: "", sx: r.dv[0], sy: r.dv[1], n: r.dv[2] };
+  return { date: rec.d, rows, source: rec.s === "W" ? "Weather Underground" : "Ecowitt" };
+}
+
+async function monthDays(monthVal, onProgress, isStale) {
+  const [y, mo] = monthVal.split("-").map(Number);
+  const last = new Date(y, mo, 0).getDate();
+  const todayStr = $("rawDate").max, minStr = $("rawDate").min || "0000-00-00";
+  const dates = [];
+  for (let i = 1; i <= last; i++) {
+    const ds = `${monthVal}-${String(i).padStart(2, "0")}`;
+    if (ds <= todayStr && ds >= minStr) dates.push(ds);
+  }
+  const days = [];
+  const hist = await loadHistoryFile();
+  let next = 0, done = 0, failed = 0, firstErr = null;
+  async function worker() {
+    while (next < dates.length && !(isStale && isStale())) {      // stop if another month was picked
+      const ds = dates[next++];
+      let ok = false;
+      const rec = hist && ds < todayStr ? hist.get(ds) : null;       // 1. the saved history file
+      if (rec) { if (!rec.none) days.push(recordToDay(rec)); ok = true; }
+      const saved = !ok && ds < todayStr ? loadSavedDay(ds) : null;  // 2. what this browser has seen before       // finished days are remembered between visits
+      if (saved) { days.push(saved); ok = true; }
+      for (let attempt = 1; attempt <= 3 && !ok; attempt++) {     // retry, in case the service said "too many requests"
+        try {
+          const data = await ensureDay(ds);
+          if (data.stats && data.times.length) {
+            days.push({ date: ds, rows: Object.fromEntries(data.stats.map(r => [r.label, r])), source: data.source });
+            if (ds < todayStr) saveDay(ds, data);
+          }
+          ok = true;
+          faster();
+        } catch (err) {
+          firstErr = err;
+          slower();
+          if (attempt < 3) await new Promise(r => setTimeout(r, 3000 * attempt));
+        }
+      }
+      if (!ok) failed++;
+      onProgress(++done, dates.length, days);
+    }
+  }
+  await Promise.all([worker(), worker()]);
+  days.sort((a, b) => a.date < b.date ? -1 : 1);
+  return { days, failed, firstErr, expected: dates.length };
+}
+
+const fmtDay = ds => new Date(ds + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+const fmtTs = ts => ts == null ? "" : `${fmtDay(dateStr(new Date(ts)))}, ${fmtTime(ts)}`;
+
+function monCard(title, rows, note, noWhen) {
+  const body = rows.map(r => `<tr><th scope="row">${esc(r[0])}</th><td class="v">${esc(r[1])}</td>${noWhen ? "" : `<td class="t">${esc(r[2] || "—")}</td>`}</tr>`).join("");
+  return `<section class="panel"><h2 class="panel-title">${esc(title)}</h2>` +
+    `<table class="stats-table"><thead><tr><th>Measure</th><th>Value</th>${noWhen ? "" : "<th>When</th>"}</tr></thead><tbody>${body}</tbody></table>` +
+    (note ? `<p class="stats-note">${esc(note)}</p>` : "") + `</section>`;
+}
+
+function renderMonth(res, monthVal, progress) {
+  const [y, mo] = monthVal.split("-").map(Number);
+  const title = new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long", year: "numeric" });
+  const days = res.days.slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  if (!days.length) {
+    monMsg(res.failed ? `The data didn't load for ${title}. ${res.firstErr ? res.firstErr.message : ""}` : `No data was found for ${title}.`);
+    return;
+  }
+  const num = (day, label) => { const r = day.rows[label]; return r && Number.isFinite(r.num) ? r : null; };
+  const hi = days.map(d => ({ d, r: num(d, "Daily high") })).filter(x => x.r);
+  const lo = days.map(d => ({ d, r: num(d, "Daily low") })).filter(x => x.r);
+  const unitOf = (list, fallback) => (list[0] && list[0].r.unit) || fallback;
+  const tU = unitOf(hi, unitOf(lo, ""));
+  const t1 = n => n.toFixed(1) + (tU ? " " + tU : "");
+  const avg = a => a.reduce((s, v) => s + v, 0) / a.length;
+
+  // Daily mean is the average of that day's high and low, so the monthly mean is the average of those
+  const means = days.map(d => { const h = num(d, "Daily high"), l = num(d, "Daily low"); return h && l ? (h.num + l.num) / 2 : null; }).filter(v => v !== null);
+
+  // Daily mean dew point is the average of the day's highest and lowest, the same way as temperature
+  const dews = days.map(d => { const h = num(d, "Highest dew point"), l = num(d, "Lowest dew point"); return h && l ? (h.num + l.num) / 2 : null; }).filter(v => v !== null);
+  const hxMeans = days.map(d => num(d, "Mean humidex")).filter(Boolean).map(r => r.num);
+  const wcMeans = days.map(d => num(d, "Mean wind chill")).filter(Boolean).map(r => r.num);
+
+  const pick = (list, better) => list.reduce((b, x) => (b === null || better(x.r.num, b.r.num) ? x : b), null);
+  const minHi = pick(hi, (a, b) => a < b), maxLo = pick(lo, (a, b) => a > b);
+  const when = x => x ? fmtTs(x.r.ts) : "";
+
+  const tempRows = [
+    ["Average daily high", hi.length ? t1(avg(hi.map(x => x.r.num))) : "--", ""],
+    ["Average daily low", lo.length ? t1(avg(lo.map(x => x.r.num))) : "--", ""],
+    ["Mean temperature", means.length ? t1(avg(means)) : "--", ""],
+    ["Average dew point", dews.length ? t1(avg(dews)) : "--", ""],
+    ["Average humidex" + (hxMeans.length ? ` (${hxMeans.length} day${hxMeans.length === 1 ? "" : "s"})` : ""), hxMeans.length ? String(Math.round(avg(hxMeans))) : "--"],
+    ["Average wind chill" + (wcMeans.length ? ` (${wcMeans.length} day${wcMeans.length === 1 ? "" : "s"})` : ""), wcMeans.length ? String(Math.round(avg(wcMeans))) : "--"]
+  ];
+
+  // Extremes card: record values for the month, with when they happened
+  const maxHi = pick(hi, (a, b) => a > b), minLo = pick(lo, (a, b) => a < b);
+  const hxList = days.map(d => ({ d, r: num(d, "Maximum humidex") })).filter(x => x.r);
+  const wcList = days.map(d => ({ d, r: num(d, "Minimum wind chill") })).filter(x => x.r);
+  const maxHx = pick(hxList, (a, b) => a > b), minWc = pick(wcList, (a, b) => a < b);
+  const dwHi = days.map(d => ({ d, r: num(d, "Highest dew point") })).filter(x => x.r);
+  const dwLo = days.map(d => ({ d, r: num(d, "Lowest dew point") })).filter(x => x.r);
+  const maxDw = pick(dwHi, (a, b) => a > b), minDw = pick(dwLo, (a, b) => a < b);
+  const extremeRows = [
+    ["Highest temperature", maxHi ? t1(maxHi.r.num) : "--", when(maxHi)],
+    ["Lowest temperature", minLo ? t1(minLo.r.num) : "--", when(minLo)],
+    ["Lowest daily high", minHi ? t1(minHi.r.num) : "--", when(minHi)],
+    ["Highest daily low", maxLo ? t1(maxLo.r.num) : "--", when(maxLo)],
+    ["Highest dew point", maxDw ? t1(maxDw.r.num) : "--", when(maxDw)],
+    ["Lowest dew point", minDw ? t1(minDw.r.num) : "--", when(minDw)],
+    ["Highest humidex", maxHx ? String(Math.round(maxHx.r.num)) : "--", when(maxHx)],
+    ["Lowest wind chill", minWc ? String(Math.round(minWc.r.num)) : "--", when(minWc)]
+  ];
+
+  const rain = days.map(d => ({ d, r: num(d, "Total precipitation") })).filter(x => x.r);
+  const rate = days.map(d => ({ d, r: num(d, "Highest rainfall rate") })).filter(x => x.r);
+  const dp = prefs.units === "imperial" ? 2 : 1;
+  const rU = rain.length ? rain[0].r.unit : "", rrU = rate.length ? rate[0].r.unit : "";
+  const total = rain.reduce((s, x) => s + x.r.num, 0);
+  const wet = rain.filter(x => x.r.num > 0);
+  const maxDay = pick(rain, (a, b) => a > b);
+  const maxRate = pick(rate, (a, b) => a > b);
+  const precipRows = [
+    ["Total precipitation", rain.length ? total.toFixed(dp) + (rU ? " " + rU : "") : "--", ""],
+    ["Most rain in a day", maxDay && maxDay.r.num > 0 ? maxDay.r.num.toFixed(dp) + (rU ? " " + rU : "") : (rain.length ? "0" : "--"),
+      maxDay && maxDay.r.num > 0 ? fmtDay(maxDay.d.date) : ""],
+    ["Highest rainfall rate", maxRate && maxRate.r.num > 0 ? maxRate.r.num.toFixed(dp) + (rrU ? " " + rrU : "") : (rate.length ? "0" : "--"),
+      maxRate && maxRate.r.num > 0 ? fmtTs(maxRate.r.ts) : ""],
+    ["Days with precipitation", rain.length ? String(wet.length) : "--", rain.length ? `of ${rain.length} days with data` : ""]
+  ];
+
+  // Wind card
+  const wsp = days.map(d => ({ d, r: num(d, "Average wind speed") })).filter(x => x.r);
+  const wgs = days.map(d => ({ d, r: num(d, "Maximum wind gust") })).filter(x => x.r);
+  const wU = unitOf(wsp, unitOf(wgs, ""));
+  const maxGust = pick(wgs, (a, b) => a > b);
+  let sx = 0, sy = 0, n = 0;
+  days.forEach(d => { const v = d.rows["Wind direction vector"]; if (v && Number.isFinite(v.sx)) { sx += v.sx; sy += v.sy; n += v.n; } });
+  let dirText = "--", dirNote = "";
+  if (n) {
+    const steady = Math.hypot(sx, sy) / n;                       // 1 = always the same direction, 0 = all over the place
+    if (steady < 0.1) { dirText = "Variable"; dirNote = "no prevailing direction"; }
+    else { const deg = (Math.atan2(sx, sy) * 180 / Math.PI + 360) % 360; dirText = `${compass(deg)} (${Math.round(deg)}\u00b0)`; dirNote = "wind from"; }
+  }
+  const windRows = [
+    ["Average wind speed", wsp.length ? avg(wsp.map(x => x.r.num)).toFixed(1) + (wU ? " " + wU : "") : "--", ""],
+    ["Strongest gust", maxGust ? maxGust.r.num.toFixed(1) + (wU ? " " + wU : "") : "--", when(maxGust)],
+    ["Average wind direction", dirText, dirNote]
+  ];
+
+  const isCurrent = monthVal === $("monDate").max;
+  const missing = res.expected - days.length;
+  $("monStatus").textContent = `${title}${isCurrent ? " (so far)" : ""}: ${days.length} of ${res.expected} days loaded` +
+    (res.failed ? `, ${res.failed} failed to load${res.firstErr ? " (" + res.firstErr.message + ")" : ""}` : "") + (!progress && missing - res.failed > 0 ? `, ${missing - res.failed} with no data` : "") + (progress ? `. Still loading (${progress})...` : ".");
+  const tNote = "Mean temperature and average dew point use each day's high and low. Average humidex and wind chill are the average of each day's readings where they apply, then averaged across those days. Averages cover only the days that loaded. If a value was reached more than once, the earliest is shown. Times are in this browser's time zone.";
+  const eNote = "Humidex and wind chill appear only on days when they apply, so a dash means none applied this month.";
+  $("monCards").innerHTML = monCard("Temperature", tempRows, tNote + " The number of days in brackets is how many days the humidex or wind chill applied.", true) +
+    monCard("Extremes", extremeRows, eNote) +
+    monCard("Wind", windRows, "Average wind direction is the vector average of every reading in the month (the direction the wind blew from most). It shows Variable when the wind had no prevailing direction.") +
+    monCard("Precipitation", precipRows, "A day counts as a precipitation day when its total is above 0.");
+}
+
+/* --- By year ---
+   One row per month, built from the same per-day stats as the By month view. The months load
+   one after another, so the table fills in as it goes. Days already seen are remembered. */
+function updateYrNav() {
+  const y = $("yrDate");
+  $("yrPrev").disabled = !!y.min && Number(y.value) <= Number(y.min);
+  $("yrNext").disabled = !!y.max && Number(y.value) >= Number(y.max);
+  $("yrToday").disabled = y.value === y.max;
+}
+function updateYrBounds() {
+  const y = $("yrDate");
+  y.max = String(new Date().getFullYear());
+  y.min = $("rawDate").min ? $("rawDate").min.slice(0, 4) : "";
+  if (!y.value) y.value = y.max;
+  if (y.min && Number(y.value) < Number(y.min)) y.value = y.min;
+  updateYrNav();
+}
+function setYear(v) {
+  const y = $("yrDate");
+  v = Number(v);
+  if (!v) return;
+  if (v > Number(y.max)) v = Number(y.max);
+  if (y.min && v < Number(y.min)) v = Number(y.min);
+  y.value = String(v);
+  refreshHistoric();
+}
+(function initYrControls() {
+  const y = $("yrDate");
+  y.max = String(new Date().getFullYear()); y.value = y.max;
+  y.addEventListener("change", () => setYear(y.value));
+  $("yrPrev").onclick = () => setYear(Number(y.value) - 1);
+  $("yrNext").onclick = () => setYear(Number(y.value) + 1);
+  $("yrToday").onclick = () => setYear(y.max);
+})();
+
+// Numbers for a set of days (a month, or the whole year)
+function summarizeDays(days) {
+  const num = (day, label) => { const r = day.rows[label]; return r && Number.isFinite(r.num) ? r : null; };
+  const col = label => days.map(d => ({ d, r: num(d, label) })).filter(x => x.r);
+  const avg = a => a.reduce((s, v) => s + v, 0) / a.length;
+  const hi = col("Daily high"), lo = col("Daily low"), ws = col("Average wind speed");
+  const means = days.map(d => { const h = num(d, "Daily high"), l = num(d, "Daily low"); return h && l ? (h.num + l.num) / 2 : null; }).filter(v => v !== null);
+  const best = (list, better) => list.reduce((b, x) => (b === null || better(x.r.num, b.r.num) ? x : b), null);
+  const rain = col("Total precipitation");
+  let sx = 0, sy = 0, n = 0;
+  days.forEach(d => { const v = d.rows["Wind direction vector"]; if (v && Number.isFinite(v.sx)) { sx += v.sx; sy += v.sy; n += v.n; } });
+  let dir = null;
+  if (n) dir = Math.hypot(sx, sy) / n < 0.1 ? "Variable" : (Math.atan2(sx, sy) * 180 / Math.PI + 360) % 360;
+  const mxHi = best(hi, (a, b) => a > b), mxLo = best(lo, (a, b) => a > b);
+  return {
+    days: days.length,
+    avgHigh: hi.length ? avg(hi.map(x => x.r.num)) : null,
+    avgLow: lo.length ? avg(lo.map(x => x.r.num)) : null,
+    mean: means.length ? avg(means) : null,
+    maxHigh: mxHi ? mxHi.r.num : null, maxHighWhen: mxHi ? fmtTs(mxHi.r.ts) : "",
+    maxLow: mxLo ? mxLo.r.num : null, maxLowWhen: mxLo ? fmtTs(mxLo.r.ts) : "",
+    precip: rain.length ? rain.reduce((s, x) => s + x.r.num, 0) : null,
+    wind: ws.length ? avg(ws.map(x => x.r.num)) : null,
+    dir,
+    tUnit: (hi[0] && hi[0].r.unit) || (lo[0] && lo[0].r.unit) || "",
+    wUnit: (ws[0] && ws[0].r.unit) || "",
+    rUnit: (rain[0] && rain[0].r.unit) || ""
+  };
+}
+
+function yrMsg(text) { $("yrStatus").textContent = text; }
+
+function renderYear(year, rows, loadingNote) {
+  // rows: 12 entries; each is { name, state: "wait" | "future" | "none" | "done", sum, error }
+  const all = rows.filter(r => r.sum);
+  const units = all.find(r => r.sum.tUnit !== undefined) ? {
+    t: (all.find(r => r.sum.tUnit) || { sum: {} }).sum.tUnit || "",
+    w: (all.find(r => r.sum.wUnit) || { sum: {} }).sum.wUnit || "",
+    r: (all.find(r => r.sum.rUnit) || { sum: {} }).sum.rUnit || ""
+  } : { t: "", w: "", r: "" };
+  const dp = prefs.units === "imperial" ? 2 : 1;
+  const f1 = v => v === null || v === undefined ? "—" : v.toFixed(1);
+  const dirText = d => d === null || d === undefined ? "—" : (d === "Variable" ? "Variable" : `${compass(d)} (${Math.round(d)}°)`);
+  const cells = (r, label) => {
+    if (r.sum) {
+      const s = r.sum;
+      return `<th scope="row">${esc(label)}</th><td>${f1(s.avgHigh)}</td><td>${f1(s.avgLow)}</td><td>${f1(s.mean)}</td>` +
+        `<td title="${esc(s.maxHighWhen)}">${f1(s.maxHigh)}</td><td title="${esc(s.maxLowWhen)}">${f1(s.maxLow)}</td>` +
+        `<td>${s.precip === null ? "—" : s.precip.toFixed(dp)}</td><td>${f1(s.wind)}</td><td>${esc(dirText(s.dir))}</td>`;
+    }
+    const msg = { wait: "Waiting...", loading: "Loading...", future: "", none: "No data", error: "Couldn't load" }[r.state] || "";
+    return `<th scope="row">${esc(label)}</th><td colspan="8" class="na">${esc(msg)}</td>`;
+  };
+  const body = rows.map(r => `<tr>${cells(r, r.name)}</tr>`).join("");
+  const total = rows.filter(r => r.sum).length ? summarizeDays(rows.flatMap(r => r.days || [])) : null;
+  const foot = total ? `<tfoot><tr class="year-total">${cells({ sum: total }, String(year))}</tr></tfoot>` : "";
+  const u = (x) => x ? ` (${x})` : "";
+  $("yrTable").innerHTML = `<div class="table-scroll"><table class="stats-table year-table"><thead><tr><th>Month</th>` +
+    `<th>Average high${esc(u(units.t))}</th><th>Average low${esc(u(units.t))}</th><th>Average mean${esc(u(units.t))}</th>` +
+    `<th>Highest high${esc(u(units.t))}</th><th>Highest low${esc(u(units.t))}</th>` +
+    `<th>Total precipitation${esc(u(units.r))}</th><th>Average wind${esc(u(units.w))}</th><th>Average wind direction</th></tr></thead>` +
+    `<tbody>${body}</tbody>${foot}</table></div>` +
+    `<p class="stats-note">Average mean is the average of each day's high and low. Highest low is the highest daily low of the month. Hover over a highest value to see when it happened. ` +
+    `Average wind direction is the vector average of every reading (it shows Variable when the wind had no prevailing direction), and the last row covers the whole year. Averages cover only the days that loaded.</p>`;
+}
+
+let yrReq = 0;
+async function loadYear() {
+  const year = Number($("yrDate").value);
+  if (!year) return;
+  updateYrNav();
+  const c = getCfg(), my = ++yrReq;
+  if ((!c.proxyUrl && (placeholder(c.applicationKey) || placeholder(c.apiKey) || !c.apiKey || !c.applicationKey)) || placeholder(c.mac) || !c.mac) {
+    $("yrTable").innerHTML = "";
+    yrMsg("Add this station's application key, API key and MAC address in CONFIG to load its data.");
+    return;
+  }
+  const todayMonth = monthStr(new Date()), minMonth = ($("rawDate").min || "0000-00").slice(0, 7);
+  const rows = Array.from({ length: 12 }, (_, i) => {
+    const mv = `${year}-${String(i + 1).padStart(2, "0")}`;
+    return { month: mv, name: new Date(year, i, 1).toLocaleDateString([], { month: "long" }),
+             state: mv > todayMonth || mv < minMonth ? "future" : "wait", sum: null, days: null };
+  });
+  const toLoad = rows.filter(r => r.state === "wait");
+  if (!toLoad.length) { $("yrTable").innerHTML = ""; yrMsg(`No data is available for ${year}.`); return; }
+  renderYear(year, rows);
+  let failedDays = 0, firstErr = null, done = 0;
+  try {
+    for (const r of toLoad) {
+      if (my !== yrReq) return;                               // another year was picked
+      r.state = "loading";
+      yrMsg(`Loading ${r.name} ${year} (month ${done + 1} of ${toLoad.length})...`);
+      renderYear(year, rows);
+      const res = await monthDays(r.month, (n, t) => { if (my === yrReq) yrMsg(`Loading ${r.name} ${year}: day ${n} of ${t} (month ${done + 1} of ${toLoad.length})...`); }, () => my !== yrReq);
+      if (my !== yrReq) return;
+      failedDays += res.failed; firstErr = firstErr || (res.failed ? res.firstErr : null);
+      r.days = res.days;
+      if (res.days.length) { r.sum = summarizeDays(res.days); r.state = "done"; }
+      else r.state = res.failed ? "error" : "none";
+      done++;
+      renderYear(year, rows);
+    }
+    yrMsg(`${year}: ${done} month${done === 1 ? "" : "s"} loaded` + (failedDays ? `, ${failedDays} days failed to load${firstErr ? " (" + firstErr.message + ")" : ""}. Select the year again to retry them` : "") + ".");
+  } catch (err) {
+    if (my !== yrReq) return;
+    console.warn("Yearly stats failed:", err);
+    yrMsg(`The data didn't load. ${err.message}.`);
+  }
+}
+
+let monReq = 0;
+async function loadMonth() {
+  const monthVal = $("monDate").value;
+  if (!monthVal) return;
+  updateMonNav();
+  const c = getCfg(), my = ++monReq;
+  if ((!c.proxyUrl && (placeholder(c.applicationKey) || placeholder(c.apiKey) || !c.apiKey || !c.applicationKey)) || placeholder(c.mac) || !c.mac) {
+    monMsg("Add this station's application key, API key and MAC address in CONFIG to load its data.");
+    return;
+  }
+  monMsg("Loading...");
+  try {
+    let lastDraw = 0;
+    const res = await monthDays(monthVal, (n, t, got) => {
+      if (my !== monReq) return;
+      $("monStatus").textContent = `Loading ${n} of ${t} days...`;
+      if (got.length && n < t && Date.now() - lastDraw > 2500) {          // show the numbers so far while the rest load
+        lastDraw = Date.now();
+        renderMonth({ days: got, failed: 0, expected: t }, monthVal, `${n} of ${t} days`);
+      }
+    }, () => my !== monReq);
+    if (my !== monReq) return;
+    renderMonth(res, monthVal);
+  } catch (err) {
+    if (my !== monReq) return;
+    console.warn("Monthly stats failed:", err);
+    monMsg(`The data didn't load. ${err.message}.`);
+  }
+}
+
+/* ---------- station buttons ---------- */
+function buildStationButtons() {
+  const seg = $("stationSeg");
+  seg.innerHTML = "";
+  CONFIG.stations.forEach((st, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = st.name;
+    b.setAttribute("aria-pressed", i === prefs.station);
+    b.onclick = () => selectStation(i);
+    seg.appendChild(b);
+  });
+  document.querySelectorAll(".stationName").forEach(el => { el.textContent = station().name; });
+  $("title").textContent = station().name;
+}
+function selectStation(i) {
+  if (i === prefs.station) return;
+  prefs.station = i; savePrefs();
+  buildStationButtons();
+  clearData(); hideNotice();
+  load();
+  refreshHistoric();
+}
+
+/* ---------- view tabs ---------- */
+const VIEWS = { current: "viewCurrent", historic: "viewHistoric", climate: "viewClimate" };
+function selectView(v) {
+  view = v;
+  Object.entries(VIEWS).forEach(([k, id]) => { $(id).hidden = k !== v; });
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === v));
+  refreshHistoric();
+}
+document.querySelectorAll(".tabs button").forEach(b => { b.onclick = () => selectView(b.dataset.view); });
+
+/* ---------- compass ticks ---------- */
+(function () {
+  const g = $("ticks"); let s = "";
+  for (let i = 0; i < 36; i++) {
+    const long = i % 9 === 0 ? 0 : (i % 3 === 0 ? 6 : 10);
+    if (i % 9 === 0) continue;
+    s += `<line class="tick" x1="100" y1="${16 + long}" x2="100" y2="${24 + long}" transform="rotate(${i * 10} 100 100)"/>`;
+  }
+  g.innerHTML = s;
+})();
+
+buildStationButtons();
+selectView("current");
+load();
+schedule();
+</script>
+</body>
+</html>
