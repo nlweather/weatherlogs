@@ -130,6 +130,8 @@
   .stats-table td.t { white-space: nowrap; }
   .mon-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
   .mon-cards:empty { display: none; }
+  .card-stack { display: grid; gap: 16px; align-content: start; }
+  .mon-cards > * { align-self: start; }
   .season-cards { grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); }
   .season-cards .stats-table th, .season-cards .stats-table td { padding: 9px 8px; }
   .season-cards .stats-table td.v { font-size: 1.05rem; }
@@ -343,7 +345,6 @@
     <div id="climBox" hidden>
       <div class="chart-head"><h3 class="chart-title">Average high, mean and low temperature by month</h3><div class="chart-legend" id="climLegend"></div></div>
       <div class="chart-wrap" id="climChart"></div>
-      <p class="stats-note" id="climNote"></p>
     </div>
   </div>
   <div id="climSeasons" class="mon-cards season-cards"></div>
@@ -1367,11 +1368,25 @@ function renderDayStats(data, dateVal) {
   $("dayStatus").textContent = `${dayLabel}${isToday ? " (so far)" : ""}: ${data.times.length} readings${label ? " at " + label + " intervals" : ""} from ${data.source}.`;
   const body = data.stats.filter(r => !r.hidden).map(r =>
     `<tr><th scope="row">${esc(r.label)}</th><td class="v">${esc(r.value)}</td><td class="t">${esc(r.time || "\u2014")}</td></tr>`).join("");
+  $("dayStats").innerHTML = "";
+  $("dayStatus").textContent = text;
+}
+
+function renderDayStats(data, dateVal) {
+  const dayLabel = new Date(dateVal + "T00:00:00").toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  if (!data.times.length || !data.stats) {
+    dayMsg(`No data was found for ${dayLabel}${data.source ? " from " + data.source : ""}.`);
+    return;
+  }
+  const isToday = dateVal === $("dayDate").max;
+  const label = data.label || { "5min": "5-minute", "30min": "30-minute", "4hour": "4-hour" }[data.cycle] || "";
+  $("dayStatus").textContent = `${dayLabel}${isToday ? " (so far)" : ""}: ${data.times.length} readings${label ? " at " + label + " intervals" : ""} from ${data.source}.`;
+  const body = data.stats.filter(r => !r.hidden).map(r =>
+    `<tr><th scope="row">${esc(r.label)}</th><td class="v">${esc(r.value)}</td><td class="t">${esc(r.time || "\u2014")}</td></tr>`).join("");
   const note = data.source === "Weather Underground"
     ? "Highs and lows use the high and low recorded within each reading. Humidex and wind chill are calculated from each reading's average temperature, dew point and wind speed."
     : `Highs and lows come from the station's ${label || "logged"} readings, so a brief peak between two readings can be missed. Humidex and wind chill are calculated from those readings.`;
-  $("dayStats").innerHTML = `<table class="stats-table"><thead><tr><th>Measure</th><th>Value</th><th>Time</th></tr></thead><tbody>${body}</tbody></table>` +
-    `<p class="stats-note">${esc(note)} If a value was reached more than once, the earliest time is shown. Times are in this browser's time zone.</p>`;
+  $("dayStats").innerHTML = `<table class="stats-table"><thead><tr><th>Measure</th><th>Value</th><th>Time</th></tr></thead><tbody>${body}</tbody></table>`;
   showDayChart(data, dateVal);
 }
 
@@ -1642,12 +1657,10 @@ function renderMonth(res, monthVal, progress) {
   const missing = res.expected - days.length;
   $("monStatus").textContent = `${title}${isCurrent ? " (so far)" : ""}: ${days.length} of ${res.expected} days loaded` +
     (res.failed ? `, ${res.failed} failed to load${res.firstErr ? " (" + res.firstErr.message + ")" : ""}` : "") + (!progress && missing - res.failed > 0 ? `, ${missing - res.failed} with no data` : "") + (progress ? `. Still loading (${progress})...` : ".");
-  const tNote = "Mean temperature and average dew point use each day's high and low. Average humidex and wind chill are the average of each day's readings where they apply, then averaged across those days. Averages cover only the days that loaded. If a value was reached more than once, the earliest is shown. Times are in this browser's time zone.";
-  const eNote = "Humidex and wind chill appear only on days when they apply, so a dash means none applied this month.";
-  $("monCards").innerHTML = monCard("Temperature", tempRows, tNote + " The number of days in brackets is how many days the humidex or wind chill applied.", true) +
-    monCard("Extremes", extremeRows, eNote) +
-    monCard("Wind", windRows, "Average wind direction is the vector average of every reading in the month (the direction the wind blew from most). It shows Variable when the wind had no prevailing direction.") +
-    monCard("Precipitation", precipRows, "A day counts as a precipitation day when its total is above 0.");
+  $("monCards").innerHTML = monCard("Temperature", tempRows, "", true) +
+    monCard("Extremes", extremeRows) +
+    monCard("Wind", windRows) +
+    monCard("Precipitation", precipRows);
   showMonthChart(days, monthVal, tU || "\u00b0C");
 }
 
@@ -1747,9 +1760,7 @@ function renderYear(year, rows, loadingNote) {
     `<th>Average high${esc(u(units.t))}</th><th>Average low${esc(u(units.t))}</th><th>Average mean${esc(u(units.t))}</th>` +
     `<th>Highest high${esc(u(units.t))}</th><th>Lowest low${esc(u(units.t))}</th>` +
     `<th>Total precipitation${esc(u(units.r))}</th><th>Average wind${esc(u(units.w))}</th><th>Average wind direction</th></tr></thead>` +
-    `<tbody>${body}</tbody>${foot}</table></div>` +
-    `<p class="stats-note">Average mean is the average of each day's high and low. Lowest low is the lowest daily low of the month. Hover over a highest or lowest value to see when it happened. ` +
-    `Average wind direction is the vector average of every reading (it shows Variable when the wind had no prevailing direction), and the last row covers the whole year. Averages cover only the days that loaded.</p>`;
+    `<tbody>${body}</tbody>${foot}</table></div>`;
   renderYearCards(rows);
 }
 
@@ -1826,10 +1837,10 @@ function renderYearCards(rows) {
   ];
 
   $("yrCards").innerHTML =
-    monCard("Records", records, "Humidex and wind chill only count on days when they apply, so a dash means none applied. If a value was reached more than once, the earliest is shown. Times are in this browser's time zone.") +
-    monCard("Growing season", season, "A freeze is a day when the low went below 0\u00b0C. Spring is January to June and fall is July to December. The length is the number of days from the last spring freeze to the first fall freeze, and it is worked out from the days that have data.") +
-    monCard("Precipitation", precip, "A day counts as a precipitation day when its total is above 0.") +
-    monCard("Day counts", counts, `Counted over the ${highs.length} day${highs.length === 1 ? "" : "s"} with data. The limits use degrees Celsius whichever units you have selected.`, true);
+    monCard("Records", records) +
+    monCard("Growing season", season) +
+    monCard("Precipitation", precip) +
+    monCard("Day counts", counts, "", true);
 }
 
 let yrReq = 0;
@@ -2048,7 +2059,6 @@ function renderSeasons(allDays, todayStr) {
   allDays.forEach(d => { const s = seasonOf(d.ds); (groups[`${s.name}|${s.year}`] = groups[`${s.name}|${s.year}`] || []).push(d); });
   const unit = (allDays[0] && allDays[0].unit) || "";
   const t1 = n => n.toFixed(1) + (unit ? " " + unit : "");
-  const mdLabel = ([m, d]) => `${MONTH_SHORT[m - 1]} ${d}`;
   const cards = SEASONS.map(sp => {
     const used = Object.entries(groups).filter(([k, list]) => {
       const [name, year] = k.split("|");
@@ -2056,18 +2066,16 @@ function renderSeasons(allDays, todayStr) {
       const len = seasonLength(name, Number(year));
       return len.last < todayStr && list.length / len.days >= SEASON_MIN_COVERAGE;
     });
-    const title = sp.name, span = `${mdLabel(sp.from)} to ${mdLabel(sp.to)}. `;
+    const title = sp.name;
     if (!used.length) return monCard(title, [["Average high", "--", ""], ["Average low", "--", ""], ["Extreme high", "--", ""], ["Extreme low", "--", ""]],
-      `${span}There isn't a complete ${sp.name.toLowerCase()} in the history yet.`, true);
+      `There isn't a complete ${sp.name.toLowerCase()} in the history yet.`, true);
     const days = used.flatMap(([, list]) => list);
     const avg = a => a.reduce((s2, v) => s2 + v, 0) / a.length;
     const hiDay = days.reduce((b, d) => d.hi > b.hi ? d : b), loDay = days.reduce((b, d) => d.lo < b.lo ? d : b);
-    const yearsLabel = used.map(([k]) => Number(k.split("|")[1])).sort((a, b) => a - b)
-      .map(y => sp.name === "Winter" ? `${y}–${String(y + 1).slice(2)}` : String(y));
     return monCard(title, [
       ["Average high", t1(avg(days.map(d => d.hi))), ""], ["Average low", t1(avg(days.map(d => d.lo))), ""],
       ["Extreme high", t1(hiDay.hi), ""], ["Extreme low", t1(loDay.lo), ""]
-    ], `${span}Based on ${used.length} complete ${sp.name.toLowerCase()}${used.length === 1 ? "" : "s"}: ${yearsLabel.join(", ")}. The averages use every day's high and low in those seasons.`, true);
+    ], "", true);
   });
   $("climSeasons").innerHTML = cards.join("");
 }
@@ -2092,8 +2100,6 @@ function renderClimateMore(allDays, todayStr) {
     ["Highest dew point", ...best(rowOf("Highest dew point"), gt, t1)], ["Lowest dew point", ...best(rowOf("Lowest dew point"), lt, t1)],
     ["Highest humidex", ...best(rowOf("Maximum humidex"), gt, whole)], ["Lowest wind chill", ...best(rowOf("Minimum wind chill"), lt, whole)]
   ];
-  const first = allDays.length ? allDays[0].ds : "";
-  const note1 = `Records across every day in the history${first ? `, from ${dateYear(first)}` : ""}. Humidex and wind chill only count on days when they apply. If a value was reached more than once, the earliest is shown. Times are in this browser's time zone.`;
 
   // Freeze dates, year by year. A year's spring (Jan to Jun) or fall (Jul to Dec) only counts when that period is over
   // and has data for at least 90% of its days. A freeze is a day when the low went below 0 °C.
@@ -2115,14 +2121,38 @@ function renderClimateMore(allDays, todayStr) {
   });
   const avg = a => a.reduce((s2, v) => s2 + v, 0) / a.length;
   const doyLabel = n => new Date(2001, 0, 1 + Math.round(n)).toLocaleDateString([], { month: "short", day: "numeric" });   // 2001 is not a leap year
-  const yrs = list => list.length ? `${list.length} year${list.length === 1 ? "" : "s"} (${list.map(x => x.y).join(", ")})` : "no complete years yet";
   const freeze = [
     ["Average last spring freeze", springs.length ? doyLabel(avg(springs.map(x => x.n))) : "--"],
     ["Average first fall freeze", falls.length ? doyLabel(avg(falls.map(x => x.n))) : "--"],
     ["Average growing season", seasons.length ? `${Math.round(avg(seasons.map(x => x.n)))} days` : "--"]
   ];
-  const note2 = `A freeze is a day when the low went below 0°C. Last spring freeze (January to June): ${yrs(springs)}. First fall freeze (July to December): ${yrs(falls)}. Growing season, the days from one to the other: ${yrs(seasons)}. A year only counts once that part of the year is over and has data for at least 90% of its days.`;
-  $("climMore").innerHTML = monCard("All-time extremes", records, note1) + monCard("Freeze dates and growing season", freeze, note2, true);
+
+  // Precipitation: a year (or month) only counts once it is over and has precipitation data for at least 90% of its days
+  const rainDays = allDays.filter(d => d.rows["Total precipitation"] && Number.isFinite(d.rows["Total precipitation"].num));
+  const rU = rainDays[0] ? rainDays[0].rows["Total precipitation"].unit : "";
+  const dp = imp ? 2 : 1, mm = n => n.toFixed(dp) + (rU ? " " + rU : "");
+  const thisMonth = todayStr.slice(0, 7);
+  const yearRain = {}, monthRain = {};
+  rainDays.forEach(d => {
+    const v = d.rows["Total precipitation"].num, y = d.ds.slice(0, 4), ym = d.ds.slice(0, 7);
+    const yo = yearRain[y] = yearRain[y] || { sum: 0, n: 0 }; yo.sum += v; yo.n++;
+    const mo = monthRain[ym] = monthRain[ym] || { sum: 0, n: 0 }; mo.sum += v; mo.n++;
+  });
+  const years = Object.entries(yearRain).filter(([y, o]) => `${y}-12-31` < todayStr && o.n / (new Date(Number(y), 1, 29).getMonth() === 1 ? 366 : 365) >= SEASON_MIN_COVERAGE).map(([, o]) => o.sum);
+  const perMonth = Array.from({ length: 12 }, () => []);
+  Object.entries(monthRain).forEach(([ym, o]) => {
+    const [y, m] = ym.split("-").map(Number);
+    if (ym < thisMonth && o.n / new Date(y, m, 0).getDate() >= SEASON_MIN_COVERAGE) perMonth[m - 1].push(o.sum);
+  });
+  const monthAvg = perMonth.map((list, i) => list.length ? { i, v: avg(list) } : null).filter(Boolean);
+  const wettest = monthAvg.reduce((b, x) => !b || x.v > b.v ? x : b, null), driest = monthAvg.reduce((b, x) => !b || x.v < b.v ? x : b, null);
+  const precip = [
+    ["Average annual rainfall", years.length ? mm(avg(years)) : "--", years.length ? `${years.length} year${years.length === 1 ? "" : "s"}` : ""],
+    ["Average wettest month", wettest ? mm(wettest.v) : "--", wettest ? MONTH_LONG[wettest.i] : ""],
+    ["Average driest month", driest ? mm(driest.v) : "--", driest ? MONTH_LONG[driest.i] : ""]
+  ];
+  $("climMore").innerHTML = monCard("All-time extremes", records) +
+    `<div class="card-stack">${monCard("Freeze dates and growing season", freeze, "", true)}${monCard("Precipitation", precip)}</div>`;
 }
 
 let climReq = 0;
@@ -2163,7 +2193,6 @@ async function loadClimate() {
   const data = months.map(list => list.length ? { hi: avg(list.map(x => x.hi)), lo: avg(list.map(x => x.lo)), mean: avg(list.map(x => x.mean)), years: list.length } : null);
   const ymLabel = ym => `${MONTH_SHORT[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
   $("climStatus").textContent = `${station().name}: ${used.length} complete month${used.length === 1 ? "" : "s"} of data, ${ymLabel(used[0])} to ${ymLabel(used[used.length - 1])}.`;
-  $("climNote").textContent = `Each month's value is the average of that month over every year with at least ${CLIM_MIN_DAYS} days of data. The mean is the average of each day's high and low. The current month isn't counted until it is over, so these numbers update on the 1st of each month.`;
   renderSeasons(allDays, todayStr);
   renderClimateMore(allDays, todayStr);
   $("climBox").hidden = false;
