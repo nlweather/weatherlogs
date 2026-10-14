@@ -130,6 +130,9 @@
   .stats-table td.t { white-space: nowrap; }
   .mon-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
   .mon-cards:empty { display: none; }
+  .season-cards { grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); }
+  .season-cards .stats-table th, .season-cards .stats-table td { padding: 9px 8px; }
+  .season-cards .stats-table td.v { font-size: 1.05rem; }
   .mon-cards .stats-table td.t { white-space: normal; }
   .mon-cards .stats-table tbody th { white-space: nowrap; }
   .table-scroll { overflow-x: auto; }
@@ -343,7 +346,8 @@
       <p class="stats-note" id="climNote"></p>
     </div>
   </div>
-  <div id="climSeasons" class="mon-cards"></div>
+  <div id="climSeasons" class="mon-cards season-cards"></div>
+  <div id="climMore" class="mon-cards"></div>
 </section>
 
 
@@ -2012,7 +2016,7 @@ const MONTH_LONG = [...Array(12)].map((_, i) => new Date(2000, i, 1).toLocaleDat
 const CLIM_MIN_DAYS = 20;        // a month needs at least this many days of data to count
 
 function climMsg(text) {
-  $("climSeasons").innerHTML = "";
+  $("climSeasons").innerHTML = ""; $("climMore").innerHTML = "";
   $("climStatus").textContent = text;
   $("climBox").hidden = true; $("climChart")._draw = null;
 }
@@ -2052,22 +2056,73 @@ function renderSeasons(allDays, todayStr) {
       const len = seasonLength(name, Number(year));
       return len.last < todayStr && list.length / len.days >= SEASON_MIN_COVERAGE;
     });
-    const title = `${sp.name} (${mdLabel(sp.from)} to ${mdLabel(sp.to)})`;
+    const title = sp.name, span = `${mdLabel(sp.from)} to ${mdLabel(sp.to)}. `;
     if (!used.length) return monCard(title, [["Average high", "--", ""], ["Average low", "--", ""], ["Extreme high", "--", ""], ["Extreme low", "--", ""]],
-      `There isn't a complete ${sp.name.toLowerCase()} in the history yet.`);
+      `${span}There isn't a complete ${sp.name.toLowerCase()} in the history yet.`, true);
     const days = used.flatMap(([, list]) => list);
     const avg = a => a.reduce((s2, v) => s2 + v, 0) / a.length;
     const hiDay = days.reduce((b, d) => d.hi > b.hi ? d : b), loDay = days.reduce((b, d) => d.lo < b.lo ? d : b);
     const yearsLabel = used.map(([k]) => Number(k.split("|")[1])).sort((a, b) => a - b)
       .map(y => sp.name === "Winter" ? `${y}–${String(y + 1).slice(2)}` : String(y));
-    const withYear = ds => new Date(ds + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-    const when = (ds, ts) => ts == null ? withYear(ds) : `${withYear(ds)}, ${fmtTime(ts)}`;
     return monCard(title, [
       ["Average high", t1(avg(days.map(d => d.hi))), ""], ["Average low", t1(avg(days.map(d => d.lo))), ""],
-      ["Extreme high", t1(hiDay.hi), when(hiDay.ds, hiDay.hiTs)], ["Extreme low", t1(loDay.lo), when(loDay.ds, loDay.loTs)]
-    ], `Based on ${used.length} complete ${sp.name.toLowerCase()}${used.length === 1 ? "" : "s"}: ${yearsLabel.join(", ")}. The averages use every day's high and low in those seasons.`);
+      ["Extreme high", t1(hiDay.hi), ""], ["Extreme low", t1(loDay.lo), ""]
+    ], `${span}Based on ${used.length} complete ${sp.name.toLowerCase()}${used.length === 1 ? "" : "s"}: ${yearsLabel.join(", ")}. The averages use every day's high and low in those seasons.`, true);
   });
   $("climSeasons").innerHTML = cards.join("");
+}
+
+const dateYear = ds => new Date(ds + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+
+// All-time records, and the average dates of the last spring freeze and first fall freeze
+function renderClimateMore(allDays, todayStr) {
+  const unit = (allDays[0] && allDays[0].unit) || "";
+  const t1 = n => n.toFixed(1) + (unit ? " " + unit : "");
+  const whole = n => String(Math.round(n));
+  const best = (get, better, fmt) => {
+    let b = null;
+    allDays.forEach(d => { const r = get(d); if (r && Number.isFinite(r.num) && (!b || better(r.num, b.r.num))) b = { d, r }; });
+    return b ? [fmt(b.r.num), `${dateYear(b.d.ds)}${b.r.ts == null ? "" : ", " + fmtTime(b.r.ts)}`] : ["--", ""];
+  };
+  const hiRow = d => ({ num: d.hi, ts: d.hiTs }), loRow = d => ({ num: d.lo, ts: d.loTs });
+  const rowOf = label => d => d.rows[label];
+  const gt = (a, c) => a > c, lt = (a, c) => a < c;
+  const records = [
+    ["Highest temperature", ...best(hiRow, gt, t1)], ["Lowest temperature", ...best(loRow, lt, t1)],
+    ["Highest dew point", ...best(rowOf("Highest dew point"), gt, t1)], ["Lowest dew point", ...best(rowOf("Lowest dew point"), lt, t1)],
+    ["Highest humidex", ...best(rowOf("Maximum humidex"), gt, whole)], ["Lowest wind chill", ...best(rowOf("Minimum wind chill"), lt, whole)]
+  ];
+  const first = allDays.length ? allDays[0].ds : "";
+  const note1 = `Records across every day in the history${first ? `, from ${dateYear(first)}` : ""}. Humidex and wind chill only count on days when they apply. If a value was reached more than once, the earliest is shown. Times are in this browser's time zone.`;
+
+  // Freeze dates, year by year. A year's spring (Jan to Jun) or fall (Jul to Dec) only counts when that period is over
+  // and has data for at least 90% of its days. A freeze is a day when the low went below 0 °C.
+  const imp = prefs.units === "imperial", zero = imp ? 32 : 0;
+  const byYear = {};
+  allDays.forEach(d => { (byYear[d.ds.slice(0, 4)] = byYear[d.ds.slice(0, 4)] || []).push(d); });
+  const doy = (ds, y) => Math.round((Date.UTC(...ds.split("-").map((v, i) => i === 1 ? Number(v) - 1 : Number(v))) - Date.UTC(y, 0, 1)) / 86400000);
+  const springs = [], falls = [], seasons = [];
+  Object.entries(byYear).forEach(([ys, list]) => {
+    const y = Number(ys);
+    const inSpring = list.filter(d => Number(d.ds.slice(5, 7)) <= 6), inFall = list.filter(d => Number(d.ds.slice(5, 7)) >= 7);
+    const springOk = `${y}-06-30` < todayStr && inSpring.length / 181 >= SEASON_MIN_COVERAGE;
+    const fallOk = `${y}-12-31` < todayStr && inFall.length / 184 >= SEASON_MIN_COVERAGE;
+    const sp = springOk ? inSpring.filter(d => d.lo < zero).reduce((b, d) => !b || d.ds > b.ds ? d : b, null) : null;
+    const fa = fallOk ? inFall.filter(d => d.lo < zero).reduce((b, d) => !b || d.ds < b.ds ? d : b, null) : null;
+    if (sp) springs.push({ y, n: doy(sp.ds, y) });
+    if (fa) falls.push({ y, n: doy(fa.ds, y) });
+    if (sp && fa) seasons.push({ y, n: doy(fa.ds, y) - doy(sp.ds, y) });
+  });
+  const avg = a => a.reduce((s2, v) => s2 + v, 0) / a.length;
+  const doyLabel = n => new Date(2001, 0, 1 + Math.round(n)).toLocaleDateString([], { month: "short", day: "numeric" });   // 2001 is not a leap year
+  const yrs = list => list.length ? `${list.length} year${list.length === 1 ? "" : "s"} (${list.map(x => x.y).join(", ")})` : "no complete years yet";
+  const freeze = [
+    ["Average last spring freeze", springs.length ? doyLabel(avg(springs.map(x => x.n))) : "--"],
+    ["Average first fall freeze", falls.length ? doyLabel(avg(falls.map(x => x.n))) : "--"],
+    ["Average growing season", seasons.length ? `${Math.round(avg(seasons.map(x => x.n)))} days` : "--"]
+  ];
+  const note2 = `A freeze is a day when the low went below 0°C. Last spring freeze (January to June): ${yrs(springs)}. First fall freeze (July to December): ${yrs(falls)}. Growing season, the days from one to the other: ${yrs(seasons)}. A year only counts once that part of the year is over and has data for at least 90% of its days.`;
+  $("climMore").innerHTML = monCard("All-time extremes", records, note1) + monCard("Freeze dates and growing season", freeze, note2, true);
 }
 
 let climReq = 0;
@@ -2088,7 +2143,7 @@ async function loadClimate() {
     const row = recordToDay(rec).rows;
     const h = row["Daily high"], l = row["Daily low"];
     if (!h || !l) return;
-    if (ds < todayStr) allDays.push({ ds, hi: h.num, lo: l.num, hiTs: h.ts, loTs: l.ts, unit: h.unit });
+    if (ds < todayStr) allDays.push({ ds, hi: h.num, lo: l.num, hiTs: h.ts, loTs: l.ts, unit: h.unit, rows: row });
     if (ds >= firstOfThisMonth) return;                     // the monthly chart only uses finished months
     (per[ds.slice(0, 7)] = per[ds.slice(0, 7)] || []).push({ hi: h.num, lo: l.num, unit: h.unit });
   });
@@ -2110,6 +2165,7 @@ async function loadClimate() {
   $("climStatus").textContent = `${station().name}: ${used.length} complete month${used.length === 1 ? "" : "s"} of data, ${ymLabel(used[0])} to ${ymLabel(used[used.length - 1])}.`;
   $("climNote").textContent = `Each month's value is the average of that month over every year with at least ${CLIM_MIN_DAYS} days of data. The mean is the average of each day's high and low. The current month isn't counted until it is over, so these numbers update on the 1st of each month.`;
   renderSeasons(allDays, todayStr);
+  renderClimateMore(allDays, todayStr);
   $("climBox").hidden = false;
   const host = $("climChart");
   setChart(host, () => {
