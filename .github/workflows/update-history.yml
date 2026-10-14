@@ -1,0 +1,56 @@
+name: Update weather history
+
+on:
+  schedule:
+    - cron: "30 6 * * *"        # every day at 06:30 UTC (about 4:00 a.m. in Newfoundland)
+  workflow_dispatch:             # lets you run it by hand from the Actions tab (use this for the first big backfill)
+    inputs:
+      max:
+        description: "Stop after this many new days (leave empty for no limit)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-history
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      TZ: America/St_Johns       # so "yesterday" is yesterday where the stations are
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch new days
+        env:
+          SUMMERVILLE_ECOWITT_APP_KEY: ${{ secrets.SUMMERVILLE_ECOWITT_APP_KEY }}
+          SUMMERVILLE_ECOWITT_API_KEY: ${{ secrets.SUMMERVILLE_ECOWITT_API_KEY }}
+          SUMMERVILLE_ECOWITT_MAC: ${{ secrets.SUMMERVILLE_ECOWITT_MAC }}
+          SUMMERVILLE_WU_API_KEY: ${{ secrets.SUMMERVILLE_WU_API_KEY }}
+          SUMMERVILLE_WU_STATION_ID: ${{ secrets.SUMMERVILLE_WU_STATION_ID }}
+          STBERNARDS_ECOWITT_APP_KEY: ${{ secrets.STBERNARDS_ECOWITT_APP_KEY }}
+          STBERNARDS_ECOWITT_API_KEY: ${{ secrets.STBERNARDS_ECOWITT_API_KEY }}
+          STBERNARDS_ECOWITT_MAC: ${{ secrets.STBERNARDS_ECOWITT_MAC }}
+          STBERNARDS_WU_API_KEY: ${{ secrets.STBERNARDS_WU_API_KEY }}
+          STBERNARDS_WU_STATION_ID: ${{ secrets.STBERNARDS_WU_STATION_ID }}
+        run: node scripts/update-history.mjs ${{ github.event.inputs.max && format('--max {0}', github.event.inputs.max) || '' }}
+      - name: Save the new data
+        if: always()             # even if the run stopped early, keep what it got
+        run: |
+          git config user.name "weather-history-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "Nothing new to save."
+          else
+            git commit -m "Update weather history"
+            git pull --rebase
+            git push
+          fi
