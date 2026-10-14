@@ -131,6 +131,7 @@
   .mon-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
   .mon-cards:empty { display: none; }
   .mon-cards .stats-table td.t { white-space: normal; }
+  .mon-cards .stats-table tbody th { white-space: nowrap; }
   .table-scroll { overflow-x: auto; }
   .year-table { max-width: none; }
   .year-table th, .year-table td { padding: 9px 10px; }
@@ -342,6 +343,7 @@
       <p class="stats-note" id="climNote"></p>
     </div>
   </div>
+  <div id="climSeasons" class="mon-cards"></div>
 </section>
 
 
@@ -2010,8 +2012,62 @@ const MONTH_LONG = [...Array(12)].map((_, i) => new Date(2000, i, 1).toLocaleDat
 const CLIM_MIN_DAYS = 20;        // a month needs at least this many days of data to count
 
 function climMsg(text) {
+  $("climSeasons").innerHTML = "";
   $("climStatus").textContent = text;
   $("climBox").hidden = true; $("climChart")._draw = null;
+}
+
+/* Seasons: winter Dec 21 to Mar 20, spring Mar 21 to Jun 20, summer Jun 21 to Sep 20, fall Sep 21 to Dec 20.
+   A season only counts once it is over and has data for at least 90% of its days. */
+const SEASONS = [
+  { name: "Spring", from: [3, 21], to: [6, 20] }, { name: "Summer", from: [6, 21], to: [9, 20] },
+  { name: "Fall", from: [9, 21], to: [12, 20] }, { name: "Winter", from: [12, 21], to: [3, 20] }
+];
+const SEASON_MIN_COVERAGE = 0.9;
+function seasonOf(ds) {                                     // -> { name, year } where year is the year the season started
+  const [y, m, d] = ds.split("-").map(Number), md = m * 100 + d;
+  if (md >= 1221) return { name: "Winter", year: y };
+  if (md < 321) return { name: "Winter", year: y - 1 };
+  if (md < 621) return { name: "Spring", year: y };
+  if (md < 921) return { name: "Summer", year: y };
+  return { name: "Fall", year: y };
+}
+function seasonLength(name, year) {                         // days in that season instance, and its last day
+  const sp = SEASONS.find(x => x.name === name);
+  const start = Date.UTC(year, sp.from[0] - 1, sp.from[1]);
+  const endYear = name === "Winter" ? year + 1 : year;
+  const end = Date.UTC(endYear, sp.to[0] - 1, sp.to[1]);
+  return { days: Math.round((end - start) / 86400000) + 1, last: new Date(end).toISOString().slice(0, 10) };
+}
+function renderSeasons(allDays, todayStr) {
+  const groups = {};                                        // "Spring|2023" -> days
+  allDays.forEach(d => { const s = seasonOf(d.ds); (groups[`${s.name}|${s.year}`] = groups[`${s.name}|${s.year}`] || []).push(d); });
+  const unit = (allDays[0] && allDays[0].unit) || "";
+  const t1 = n => n.toFixed(1) + (unit ? " " + unit : "");
+  const mdLabel = ([m, d]) => `${MONTH_SHORT[m - 1]} ${d}`;
+  const cards = SEASONS.map(sp => {
+    const used = Object.entries(groups).filter(([k, list]) => {
+      const [name, year] = k.split("|");
+      if (name !== sp.name) return false;
+      const len = seasonLength(name, Number(year));
+      return len.last < todayStr && list.length / len.days >= SEASON_MIN_COVERAGE;
+    });
+    const title = `${sp.name} (${mdLabel(sp.from)} to ${mdLabel(sp.to)})`;
+    if (!used.length) return monCard(title, [["Average high", "--", ""], ["Average low", "--", ""], ["Extreme high", "--", ""], ["Extreme low", "--", ""]],
+      `There isn't a complete ${sp.name.toLowerCase()} in the history yet.`);
+    const days = used.flatMap(([, list]) => list);
+    const avg = a => a.reduce((s2, v) => s2 + v, 0) / a.length;
+    const hiDay = days.reduce((b, d) => d.hi > b.hi ? d : b), loDay = days.reduce((b, d) => d.lo < b.lo ? d : b);
+    const yearsLabel = used.map(([k]) => Number(k.split("|")[1])).sort((a, b) => a - b)
+      .map(y => sp.name === "Winter" ? `${y}–${String(y + 1).slice(2)}` : String(y));
+    const withYear = ds => new Date(ds + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+    const when = (ds, ts) => ts == null ? withYear(ds) : `${withYear(ds)}, ${fmtTime(ts)}`;
+    return monCard(title, [
+      ["Average high", t1(avg(days.map(d => d.hi))), ""], ["Average low", t1(avg(days.map(d => d.lo))), ""],
+      ["Extreme high", t1(hiDay.hi), when(hiDay.ds, hiDay.hiTs)], ["Extreme low", t1(loDay.lo), when(loDay.ds, loDay.loTs)]
+    ], `Based on ${used.length} complete ${sp.name.toLowerCase()}${used.length === 1 ? "" : "s"}: ${yearsLabel.join(", ")}. The averages use every day's high and low in those seasons.`);
+  });
+  $("climSeasons").innerHTML = cards.join("");
 }
 
 let climReq = 0;
@@ -2026,11 +2082,14 @@ async function loadClimate() {
   }
   const firstOfThisMonth = monthStr(new Date()) + "-01";
   const per = {};                                           // "year-month" -> the days of that month
+  const todayStr = dateStr(new Date()), allDays = [];
   hist.forEach((rec, ds) => {
-    if (rec.none || ds >= firstOfThisMonth) return;         // only finished months
+    if (rec.none) return;
     const row = recordToDay(rec).rows;
     const h = row["Daily high"], l = row["Daily low"];
     if (!h || !l) return;
+    if (ds < todayStr) allDays.push({ ds, hi: h.num, lo: l.num, hiTs: h.ts, loTs: l.ts, unit: h.unit });
+    if (ds >= firstOfThisMonth) return;                     // the monthly chart only uses finished months
     (per[ds.slice(0, 7)] = per[ds.slice(0, 7)] || []).push({ hi: h.num, lo: l.num, unit: h.unit });
   });
   const months = Array.from({ length: 12 }, () => []);      // each entry: one year's average for that calendar month
@@ -2050,6 +2109,7 @@ async function loadClimate() {
   const ymLabel = ym => `${MONTH_SHORT[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
   $("climStatus").textContent = `${station().name}: ${used.length} complete month${used.length === 1 ? "" : "s"} of data, ${ymLabel(used[0])} to ${ymLabel(used[used.length - 1])}.`;
   $("climNote").textContent = `Each month's value is the average of that month over every year with at least ${CLIM_MIN_DAYS} days of data. The mean is the average of each day's high and low. The current month isn't counted until it is over, so these numbers update on the 1st of each month.`;
+  renderSeasons(allDays, todayStr);
   $("climBox").hidden = false;
   const host = $("climChart");
   setChart(host, () => {
